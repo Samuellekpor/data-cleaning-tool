@@ -3,7 +3,7 @@ import pandas as pd
 
 from cleaning import CleaningOptions, apply_cleaning, preview_duplicate_rows
 from fuzzy import scan_fuzzy_duplicates
-from io_files import FileReadError, read_uploaded_file
+from io_files import FileReadError, merge_frames, read_uploaded_file
 from quality import QualityReport, build_quality_report
 
 st.set_page_config(page_title="Data Cleaning Tool", layout="wide")
@@ -298,8 +298,29 @@ if not frames:
     st.stop()
 
 names = list(frames.keys())
-selected = names[0] if len(names) == 1 else st.selectbox("Working file", names)
-df = frames[selected]
+merge = False
+if len(frames) > 1:
+    st.subheader("Merge files")
+    merge = st.checkbox(
+        "Merge files (stack rows into one table)",
+        help="Use this when each file is the same kind of table.",
+    )
+    header_sets = [tuple(map(str, f.columns)) for f in frames.values()]
+    if merge and len(set(header_sets)) > 1:
+        st.warning(
+            "Column headers differ between files. The merge will line up "
+            "matching names and leave blanks where a file is missing a column."
+        )
+        with st.expander("Headers in each file"):
+            for name, cols in zip(frames.keys(), header_sets):
+                st.write(f"**{name}:** {', '.join(cols)}")
+
+if merge:
+    df, _headers_differ = merge_frames(frames)
+    selected = "(merged)"
+else:
+    selected = names[0] if len(names) == 1 else st.selectbox("Working file", names)
+    df = frames[selected]
 file_key = f"{selected}:{len(df)}:{tuple(df.columns)}"
 if st.session_state.get("file_key") != file_key:
     st.session_state["file_key"] = file_key

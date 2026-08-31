@@ -56,3 +56,16 @@ def read_uploaded_file(file) -> pd.DataFrame:
     if len(df.columns) == 0:
         raise FileReadError(f"'{file.name}' has no columns.")
     return df
+
+
+def merge_frames(frames: dict[str, pd.DataFrame]) -> tuple[pd.DataFrame, bool]:
+    """Stack files row-wise. Returns (merged, headers_differ)."""
+    header_sets = [tuple(map(str, f.columns)) for f in frames.values()]
+    headers_differ = len(set(header_sets)) > 1
+    pieces = []
+    for name, frame in frames.items():
+        piece = frame.copy()
+        piece.insert(0, "_source_file", name)
+        pieces.append(piece)
+    merged = pd.concat(pieces, ignore_index=True, sort=False)
+    return merged, headers_differ
