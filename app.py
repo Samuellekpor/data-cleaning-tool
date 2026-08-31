@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 
+from fuzzy import scan_fuzzy_duplicates
 from io_files import FileReadError, read_uploaded_file
 from quality import QualityReport, build_quality_report
 
@@ -69,6 +70,43 @@ def render_quality_report(report: QualityReport) -> None:
     st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
 
 
+def render_fuzzy_scan(df: pd.DataFrame) -> None:
+    st.header("3. Fuzzy near-duplicates")
+    st.caption(
+        "Exact duplicates are already in the score above. This looks for "
+        "**almost** the same text — extra spaces, casing, or a typo — so you "
+        "can pick one spelling to keep."
+    )
+    scan = scan_fuzzy_duplicates(df)
+    if scan.skipped_columns:
+        st.info(
+            "Fuzzy matching was skipped for performance on columns with more "
+            "than 5,000 unique values: "
+            + ", ".join(scan.skipped_columns)
+        )
+    if not scan.scanned_columns:
+        st.write("No text columns were small enough to scan.")
+        return
+    if not scan.groups:
+        st.success("No near-duplicate groups found in the scanned text columns.")
+        return
+
+    st.warning(f"Found {len(scan.groups)} near-duplicate group(s) to review.")
+    for group in scan.groups:
+        with st.expander(
+            f"{group.column}: {len(group.variants)} spellings → keep “{group.suggested}”"
+        ):
+            preview = pd.DataFrame(
+                {
+                    "value": group.variants,
+                    "rows": [group.counts[v] for v in group.variants],
+                    "suggested keep": [v == group.suggested for v in group.variants],
+                }
+            )
+            st.dataframe(preview, use_container_width=True, hide_index=True)
+            st.caption("Apply cleaning later to collapse these to the suggested value.")
+
+
 st.header("1. Upload your data")
 st.caption("CSV or Excel. You can add more than one file.")
 
@@ -108,3 +146,4 @@ st.caption(f"{len(df):,} rows × {len(df.columns):,} columns")
 st.dataframe(df, use_container_width=True)
 
 render_quality_report(build_quality_report(df))
+render_fuzzy_scan(df)
