@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 
-from cleaning import CleaningOptions, apply_cleaning
+from cleaning import CleaningOptions, apply_cleaning, preview_duplicate_rows
 from fuzzy import scan_fuzzy_duplicates
 from io_files import FileReadError, read_uploaded_file
 from quality import QualityReport, build_quality_report
@@ -218,6 +218,55 @@ def collect_cleaning_options(df: pd.DataFrame, has_fuzzy: bool) -> CleaningOptio
     return options
 
 
+def render_pre_apply_preview(df: pd.DataFrame, options: CleaningOptions) -> None:
+    st.subheader("What will change (preview)")
+    st.caption("This is a dry look at the current file — nothing is applied yet.")
+    if options.drop_exact_duplicates:
+        dupes = preview_duplicate_rows(df, options.duplicate_subset)
+        st.write(f"Exact duplicate rows that would be dropped: **{len(dupes):,}**")
+        if not dupes.empty:
+            st.dataframe(dupes.head(50), use_container_width=True)
+            if len(dupes) > 50:
+                st.caption(f"Showing first 50 of {len(dupes):,}.")
+    if options.drop_empty_columns:
+        empty_cols = [c for c in df.columns if df[c].isna().all()]
+        st.write(
+            "Empty columns that would be removed: "
+            + (", ".join(map(str, empty_cols)) if empty_cols else "none")
+        )
+    if options.drop_empty_rows:
+        empty_rows = int(df.isna().all(axis=1).sum())
+        st.write(f"Completely empty rows that would be removed: **{empty_rows:,}**")
+    if options.collapse_fuzzy:
+        st.write("Near-duplicates will be collapsed to the suggested values shown in section 3.")
+    if options.missing_strategy == "drop_rows":
+        st.write(
+            f"Rows with any missing value that would be removed: **{int(df.isna().any(axis=1).sum()):,}**"
+        )
+
+
+def render_before_after(original: pd.DataFrame, cleaned: pd.DataFrame, log) -> None:
+    st.header("5. Before vs after")
+    after_report = build_quality_report(cleaned)
+    b1, b2, b3 = st.columns(3)
+    b1.metric("Rows", f"{log.rows_after:,}", delta=log.rows_after - log.rows_before)
+    b2.metric("Columns", f"{log.cols_after:,}", delta=log.cols_after - log.cols_before)
+    b3.metric("Quality score after", f"{after_report.score}/100")
+
+    st.subheader("Change summary")
+    st.dataframe(pd.DataFrame(log.as_rows()), use_container_width=True, hide_index=True)
+    for step in log.steps:
+        st.markdown(f"- {step}")
+
+    before_tab, after_tab = st.tabs(["Before", "After"])
+    with before_tab:
+        st.caption(f"{len(original):,} rows × {len(original.columns):,} columns")
+        st.dataframe(original, use_container_width=True)
+    with after_tab:
+        st.caption(f"{len(cleaned):,} rows × {len(cleaned.columns):,} columns")
+        st.dataframe(cleaned, use_container_width=True)
+
+
 st.header("1. Upload your data")
 st.caption("CSV or Excel. You can add more than one file.")
 
@@ -251,6 +300,12 @@ if not frames:
 names = list(frames.keys())
 selected = names[0] if len(names) == 1 else st.selectbox("Working file", names)
 df = frames[selected]
+file_key = f"{selected}:{len(df)}:{tuple(df.columns)}"
+if st.session_state.get("file_key") != file_key:
+    st.session_state["file_key"] = file_key
+    st.session_state.pop("cleaned", None)
+    st.session_state.pop("log", None)
+    st.session_state.pop("original", None)
 
 st.subheader(f"Preview — {selected}")
 st.caption(f"{len(df):,} rows × {len(df.columns):,} columns")
@@ -261,19 +316,17 @@ fuzzy_scan = render_fuzzy_scan(df)
 has_fuzzy = bool(fuzzy_scan and fuzzy_scan.groups)
 
 options = collect_cleaning_options(df, has_fuzzy)
+render_pre_apply_preview(df, options)
 
 if st.button("Apply cleaning", type="primary"):
     cleaned, log = apply_cleaning(df, options)
     st.session_state["cleaned"] = cleaned
     st.session_state["log"] = log
-    st.success("Cleaning applied. Scroll down to review the result.")
+    st.session_state["original"] = df
+    st.success("Cleaning applied. Review the before/after below.")
 
 cleaned = st.session_state.get("cleaned")
-if cleaned is not None:
-    st.subheader("Cleaned data")
-    st.dataframe(cleaned, use_container_width=True)
-    log = st.session_state.get("log")
-    if log:
-        st.write("Steps:")
-        for step in log.steps:
-            st.markdown(f"- {step}")
+log = st.session_state.get("log")
+original = st.session_state.get("original")
+if cleaned is not None and log is not None and original is not None:
+    render_before_after(original, cleaned, log)
