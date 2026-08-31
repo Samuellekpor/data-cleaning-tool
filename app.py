@@ -9,37 +9,28 @@ from cleaning import CleaningOptions, apply_cleaning, preview_duplicate_rows
 from fuzzy import scan_fuzzy_duplicates
 from io_files import FileReadError, merge_frames, read_uploaded_file
 from quality import QualityReport, build_quality_report
-
-st.set_page_config(page_title="Data Cleaning Tool", layout="wide")
-
-st.sidebar.header("Also useful")
-st.sidebar.markdown(
-    "📊 Need a polished report from your cleaned data? Use the "
-    "[Excel Report Automator](https://github.com/placeholder/excel-report-automator) →"
-)
-st.sidebar.caption("How to use this tool")
-st.sidebar.markdown(
-    """
-    1. Upload CSV or Excel (one file or several).
-    2. Read the **quality score** and column diagnosis first.
-    3. Review fuzzy near-duplicate groups.
-    4. Tick cleaning steps and check the preview.
-    5. Apply, compare before/after, then download.
-    """
+from ui import (
+    bento_tiles,
+    hero,
+    inject_theme,
+    note_cards,
+    quality_score_bento,
+    section_header,
+    sidebar_chrome,
 )
 
-st.title("Data Cleaning Tool")
-st.markdown(
-    """
-    Upload messy spreadsheets and this app **inspects them like a data-quality
-    auditor**. It finds missing values, duplicates, inconsistent dates, and
-    suspicious ID/email/phone columns — then gives you a score and
-    reviewable fixes.
-
-    You see the diagnosis **before** anything is changed, so you learn what
-    is wrong just by uploading.
-    """
+st.set_page_config(
+    page_title="Data Cleaning Tool",
+    layout="wide",
+    initial_sidebar_state="auto",
 )
+
+inject_theme()
+
+with st.sidebar:
+    sidebar_chrome()
+
+hero()
 
 
 def _score_caption(score: int) -> str:
@@ -53,25 +44,20 @@ def _score_caption(score: int) -> str:
 
 
 def render_quality_report(report: QualityReport) -> None:
-    st.header("2. Data quality report")
-    st.caption("This is the diagnosis from the raw file. Nothing has been cleaned yet.")
-
-    st.metric(
-        "Your data quality score",
-        f"{report.score}/100",
-        help="Weighted: completeness 40%, uniqueness 30%, consistency 30%.",
+    section_header(
+        "02  ·  Diagnosis",
+        "Data quality report",
+        "This is the raw file, unchanged. Completeness 40%, uniqueness 30%, consistency 30%.",
     )
-    st.progress(report.score / 100.0)
-    st.caption(_score_caption(report.score))
-
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Completeness", f"{report.completeness:.0f}/100")
-    c2.metric("Uniqueness", f"{report.uniqueness:.0f}/100")
-    c3.metric("Consistency", f"{report.consistency:.0f}/100")
-    c4.metric("Exact duplicate rows", f"{report.exact_duplicate_rows:,}")
-
-    for note in report.notes:
-        st.markdown(f"- {note}")
+    quality_score_bento(
+        report.score,
+        _score_caption(report.score),
+        report.completeness,
+        report.uniqueness,
+        report.consistency,
+        report.exact_duplicate_rows,
+    )
+    note_cards(report.notes)
 
     rows = []
     for col in report.columns:
@@ -87,16 +73,15 @@ def render_quality_report(report: QualityReport) -> None:
                 "invalid phones": col.invalid_phone_count,
             }
         )
-    st.subheader("Column-by-column diagnosis")
+    st.caption("Column-by-column diagnosis")
     st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
 
 
 def render_fuzzy_scan(df: pd.DataFrame):
-    st.header("3. Fuzzy near-duplicates")
-    st.caption(
-        "Exact duplicates are already in the score above. This looks for "
-        "**almost** the same text — extra spaces, casing, or a typo — so you "
-        "can pick one spelling to keep."
+    section_header(
+        "03  ·  Near-matches",
+        "Fuzzy duplicates",
+        "Exact copies are already in the score. This finds extra spaces, casing, and near-typos.",
     )
     scan = scan_fuzzy_duplicates(df)
     if scan.skipped_columns:
@@ -106,7 +91,7 @@ def render_fuzzy_scan(df: pd.DataFrame):
             + ", ".join(scan.skipped_columns)
         )
     if not scan.scanned_columns:
-        st.write("No text columns were small enough to scan.")
+        st.info("No text columns were small enough to scan.")
         return scan
     if not scan.groups:
         st.success("No near-duplicate groups found in the scanned text columns.")
@@ -130,9 +115,11 @@ def render_fuzzy_scan(df: pd.DataFrame):
 
 
 def collect_cleaning_options(df: pd.DataFrame, has_fuzzy: bool) -> CleaningOptions:
-    st.header("4. Cleaning operations")
-    st.caption("Tick what you want, then apply. Nothing changes until you click the button.")
-
+    section_header(
+        "04  ·  Operations",
+        "Cleaning steps",
+        "Tick what you trust. Nothing changes until you apply.",
+    )
     options = CleaningOptions()
 
     st.subheader("Duplicates")
@@ -239,8 +226,7 @@ def collect_cleaning_options(df: pd.DataFrame, has_fuzzy: bool) -> CleaningOptio
 
 
 def render_pre_apply_preview(df: pd.DataFrame, options: CleaningOptions) -> None:
-    st.subheader("What will change (preview)")
-    st.caption("This is a dry look at the current file — nothing is applied yet.")
+    st.caption("What will change — a dry look. Nothing is applied yet.")
     if options.drop_exact_duplicates:
         dupes = preview_duplicate_rows(df, options.duplicate_subset)
         st.write(f"Exact duplicate rows that would be dropped: **{len(dupes):,}**")
@@ -258,7 +244,7 @@ def render_pre_apply_preview(df: pd.DataFrame, options: CleaningOptions) -> None
         empty_rows = int(df.isna().all(axis=1).sum())
         st.write(f"Completely empty rows that would be removed: **{empty_rows:,}**")
     if options.collapse_fuzzy:
-        st.write("Near-duplicates will be collapsed to the suggested values shown in section 3.")
+        st.write("Near-duplicates will be collapsed to the suggested values shown above.")
     if options.missing_strategy == "drop_rows":
         st.write(
             f"Rows with any missing value that would be removed: **{int(df.isna().any(axis=1).sum()):,}**"
@@ -266,17 +252,22 @@ def render_pre_apply_preview(df: pd.DataFrame, options: CleaningOptions) -> None
 
 
 def render_before_after(original: pd.DataFrame, cleaned: pd.DataFrame, log) -> None:
-    st.header("5. Before vs after")
+    section_header(
+        "05  ·  Receipt",
+        "Before vs after",
+        "Proof of what changed — then download the cleaned table.",
+    )
     after_report = build_quality_report(cleaned)
-    b1, b2, b3 = st.columns(3)
-    b1.metric("Rows", f"{log.rows_after:,}", delta=log.rows_after - log.rows_before)
-    b2.metric("Columns", f"{log.cols_after:,}", delta=log.cols_after - log.cols_before)
-    b3.metric("Quality score after", f"{after_report.score}/100")
-
-    st.subheader("Change summary")
+    bento_tiles(
+        [
+            ("era-tile-lg", "Rows", f"{log.rows_after:,}", f"Was {log.rows_before:,}"),
+            ("era-tile", "Columns", f"{log.cols_after:,}", f"Was {log.cols_before:,}"),
+            ("era-tile", "Score after", f"{after_report.score}/100", "Quality on the cleaned table"),
+        ]
+    )
+    st.caption("Change summary")
     st.dataframe(pd.DataFrame(log.as_rows()), use_container_width=True, hide_index=True)
-    for step in log.steps:
-        st.markdown(f"- {step}")
+    note_cards(log.steps)
 
     before_tab, after_tab = st.tabs(["Before", "After"])
     with before_tab:
@@ -295,8 +286,11 @@ def _excel_bytes(df: pd.DataFrame) -> bytes:
 
 
 def render_export(cleaned: pd.DataFrame, log) -> None:
-    st.header("6. Export")
-    st.caption("Download the cleaned table and a short proof of what changed.")
+    section_header(
+        "06  ·  Deliverable",
+        "Export",
+        "The cleaned table, plus a small change log you can keep as proof.",
+    )
     csv_data = cleaned.to_csv(index=False).encode("utf-8")
     excel_data = _excel_bytes(cleaned)
     summary_text = log.as_text()
@@ -305,45 +299,53 @@ def render_export(cleaned: pd.DataFrame, log) -> None:
     c1, c2, c3 = st.columns(3)
     with c1:
         st.download_button(
-            "Download CSV",
+            "Download CSV  ↗",
             data=csv_data,
             file_name="cleaned_data.csv",
             mime="text/csv",
+            use_container_width=True,
         )
     with c2:
         st.download_button(
-            "Download Excel",
+            "Download Excel  ↗",
             data=excel_data,
             file_name="cleaned_data.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True,
         )
     with c3:
         st.download_button(
-            "Download cleaning summary (txt)",
+            "Summary (txt)  ↗",
             data=summary_text,
             file_name="cleaning_summary.txt",
             mime="text/plain",
+            use_container_width=True,
         )
     st.download_button(
-        "Download cleaning summary (CSV)",
+        "Summary (CSV)  ↗",
         data=summary_csv,
         file_name="cleaning_summary.csv",
         mime="text/csv",
+        use_container_width=True,
     )
 
 
-st.header("1. Upload your data")
-st.caption("CSV or Excel. You can add more than one file.")
+section_header(
+    "01  ·  Intake",
+    "Upload your data",
+    "CSV or Excel. Several files can be stacked into one table.",
+)
 
 uploads = st.file_uploader(
     "Choose files",
     type=["xlsx", "xls", "csv"],
     accept_multiple_files=True,
     help="Accepted formats: .xlsx, .xls, .csv",
+    label_visibility="collapsed",
 )
 
 if not uploads:
-    st.info("Drop a file above to get started.")
+    st.info("Start by dropping a spreadsheet. The quality score appears before anything is cleaned.")
     st.stop()
 
 frames: dict[str, pd.DataFrame] = {}
@@ -365,7 +367,6 @@ if not frames:
 names = list(frames.keys())
 merge = False
 if len(frames) > 1:
-    st.subheader("Merge files")
     merge = st.checkbox(
         "Merge files (stack rows into one table)",
         help="Use this when each file is the same kind of table.",
@@ -393,8 +394,11 @@ if st.session_state.get("file_key") != file_key:
     st.session_state.pop("log", None)
     st.session_state.pop("original", None)
 
-st.subheader(f"Preview — {selected}")
-st.caption(f"{len(df):,} rows × {len(df.columns):,} columns")
+section_header(
+    "Receipt",
+    f"Preview — {selected}",
+    f"{len(df):,} rows × {len(df.columns):,} columns in the working table.",
+)
 st.dataframe(df, use_container_width=True)
 
 render_quality_report(build_quality_report(df))
