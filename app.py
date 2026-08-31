@@ -1,5 +1,9 @@
-import streamlit as st
+from __future__ import annotations
+
+import io
+
 import pandas as pd
+import streamlit as st
 
 from cleaning import CleaningOptions, apply_cleaning, preview_duplicate_rows
 from fuzzy import scan_fuzzy_duplicates
@@ -7,6 +11,22 @@ from io_files import FileReadError, merge_frames, read_uploaded_file
 from quality import QualityReport, build_quality_report
 
 st.set_page_config(page_title="Data Cleaning Tool", layout="wide")
+
+st.sidebar.header("Also useful")
+st.sidebar.markdown(
+    "📊 Need a polished report from your cleaned data? Use the "
+    "[Excel Report Automator](https://github.com/placeholder/excel-report-automator) →"
+)
+st.sidebar.caption("How to use this tool")
+st.sidebar.markdown(
+    """
+    1. Upload CSV or Excel (one file or several).
+    2. Read the **quality score** and column diagnosis first.
+    3. Review fuzzy near-duplicate groups.
+    4. Tick cleaning steps and check the preview.
+    5. Apply, compare before/after, then download.
+    """
+)
 
 st.title("Data Cleaning Tool")
 st.markdown(
@@ -267,6 +287,51 @@ def render_before_after(original: pd.DataFrame, cleaned: pd.DataFrame, log) -> N
         st.dataframe(cleaned, use_container_width=True)
 
 
+def _excel_bytes(df: pd.DataFrame) -> bytes:
+    buffer = io.BytesIO()
+    with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
+        df.to_excel(writer, index=False, sheet_name="cleaned")
+    return buffer.getvalue()
+
+
+def render_export(cleaned: pd.DataFrame, log) -> None:
+    st.header("6. Export")
+    st.caption("Download the cleaned table and a short proof of what changed.")
+    csv_data = cleaned.to_csv(index=False).encode("utf-8")
+    excel_data = _excel_bytes(cleaned)
+    summary_text = log.as_text()
+    summary_csv = pd.DataFrame(log.as_rows()).to_csv(index=False).encode("utf-8")
+
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        st.download_button(
+            "Download CSV",
+            data=csv_data,
+            file_name="cleaned_data.csv",
+            mime="text/csv",
+        )
+    with c2:
+        st.download_button(
+            "Download Excel",
+            data=excel_data,
+            file_name="cleaned_data.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+    with c3:
+        st.download_button(
+            "Download cleaning summary (txt)",
+            data=summary_text,
+            file_name="cleaning_summary.txt",
+            mime="text/plain",
+        )
+    st.download_button(
+        "Download cleaning summary (CSV)",
+        data=summary_csv,
+        file_name="cleaning_summary.csv",
+        mime="text/csv",
+    )
+
+
 st.header("1. Upload your data")
 st.caption("CSV or Excel. You can add more than one file.")
 
@@ -351,3 +416,4 @@ log = st.session_state.get("log")
 original = st.session_state.get("original")
 if cleaned is not None and log is not None and original is not None:
     render_before_after(original, cleaned, log)
+    render_export(cleaned, log)
