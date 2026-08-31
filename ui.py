@@ -15,14 +15,17 @@ FONTS = """
 CSS = r"""
 <style>
   :root {
-    --era-bg: #050505;
-    --era-ink: #F3F1EC;
-    --era-muted: rgba(243,241,236,0.58);
+    --era-bg: #080706;
+    --era-ink: #F6F0E6;
+    --era-muted: rgba(246,240,230,0.58);
     --era-hair: rgba(255,255,255,0.10);
-    --era-shell: rgba(255,255,255,0.045);
-    --era-core: #0A0A0C;
-    --era-teal: #5EEAD4;
-    --era-violet: #C4B5FD;
+    --era-shell: rgba(255,236,210,0.05);
+    --era-core: #100E0C;
+    --era-teal: #E4B363;
+    --era-violet: #C9A0B8;
+    --era-radius: 1.1rem;
+    --era-radius-in: 0.82rem;
+    --era-chip: 0.65rem;
     --era-ease: cubic-bezier(0.32, 0.72, 0, 1);
   }
 
@@ -41,9 +44,9 @@ CSS = r"""
     pointer-events: none;
     z-index: 0;
     background:
-      radial-gradient(ellipse 55% 40% at 12% -10%, rgba(94,234,212,0.16), transparent 58%),
-      radial-gradient(ellipse 45% 38% at 92% 8%, rgba(167,139,250,0.18), transparent 55%),
-      radial-gradient(ellipse 40% 30% at 70% 95%, rgba(94,234,212,0.07), transparent 60%);
+      radial-gradient(ellipse 55% 40% at 12% -10%, rgba(228,179,99,0.18), transparent 58%),
+      radial-gradient(ellipse 45% 38% at 92% 8%, rgba(201,160,184,0.16), transparent 55%),
+      radial-gradient(ellipse 40% 30% at 70% 95%, rgba(228,179,99,0.07), transparent 60%);
   }
 
   .stApp::after {
@@ -126,7 +129,7 @@ CSS = r"""
     backdrop-filter: blur(28px);
     -webkit-backdrop-filter: blur(28px);
     margin: 1.25rem 0.85rem !important;
-    border-radius: 2rem !important;
+    border-radius: var(--era-radius) !important;
     border: 1px solid var(--era-hair) !important;
     box-shadow: inset 0 1px 1px rgba(255,255,255,0.12);
   }
@@ -138,7 +141,7 @@ CSS = r"""
   [data-testid="stFileUploaderDropzone"] {
     background: var(--era-core) !important;
     border: 1px solid var(--era-hair) !important;
-    border-radius: calc(2rem - 0.375rem) !important;
+    border-radius: var(--era-radius-in) !important;
     min-height: 9.5rem !important;
     box-shadow: inset 0 1px 1px rgba(255,255,255,0.12);
     transition: transform 700ms var(--era-ease), opacity 700ms var(--era-ease);
@@ -147,7 +150,7 @@ CSS = r"""
   [data-testid="stFileUploader"] {
     background: var(--era-shell);
     border: 1px solid var(--era-hair);
-    border-radius: 2rem;
+    border-radius: var(--era-radius);
     padding: 0.4rem;
   }
 
@@ -169,7 +172,7 @@ CSS = r"""
     letter-spacing: 0.04em !important;
     text-transform: uppercase !important;
     font-size: 0.72rem !important;
-    border-radius: 999px !important;
+    border-radius: var(--era-chip) !important;
     padding: 0.85rem 1.5rem !important;
     border: 1px solid var(--era-hair) !important;
     background: linear-gradient(180deg, #141416, #0B0B0D) !important;
@@ -180,8 +183,8 @@ CSS = r"""
 
   .stButton > button[kind="primary"],
   [data-testid="stBaseButton-primary"] {
-    background: linear-gradient(180deg, #F3F1EC, #D9D4C8) !important;
-    color: #111 !important;
+    background: linear-gradient(180deg, #E8C47A, #C4923A) !important;
+    color: #14110C !important;
     border-color: transparent !important;
   }
 
@@ -195,13 +198,13 @@ CSS = r"""
     gap: 0.4rem;
     background: var(--era-shell);
     border: 1px solid var(--era-hair);
-    border-radius: 999px;
+    border-radius: var(--era-chip);
     padding: 0.35rem;
   }
 
   [data-testid="stTabs"] button {
     font-family: "Plus Jakarta Sans", sans-serif !important;
-    border-radius: 999px !important;
+    border-radius: 0.5rem !important;
     color: var(--era-muted) !important;
   }
 
@@ -233,7 +236,7 @@ CSS = r"""
   [data-testid="stExpander"] {
     background: var(--era-shell) !important;
     border: 1px solid var(--era-hair) !important;
-    border-radius: 1.5rem !important;
+    border-radius: var(--era-chip) !important;
     overflow: hidden;
   }
 
@@ -244,7 +247,7 @@ CSS = r"""
 
   [data-testid="stProgress"] > div > div {
     background: rgba(255,255,255,0.08) !important;
-    border-radius: 999px !important;
+    border-radius: var(--era-chip) !important;
   }
 
   [data-testid="stProgress"] [data-testid="stProgressBar"] {
@@ -262,15 +265,15 @@ CSS = r"""
     display: inline-flex;
     align-items: center;
     gap: 0.45rem;
-    border-radius: 999px;
+    border-radius: 0.45rem;
     padding: 0.28rem 0.72rem;
     font-size: 10px;
     font-weight: 600;
     letter-spacing: 0.22em;
     text-transform: uppercase;
     color: var(--era-teal);
-    background: rgba(94,234,212,0.08);
-    border: 1px solid rgba(94,234,212,0.18);
+    background: rgba(228,179,99,0.10);
+    border: 1px solid rgba(228,179,99,0.22);
     margin-bottom: 1.1rem;
   }
 
@@ -325,13 +328,13 @@ CSS = r"""
   .era-shell {
     background: var(--era-shell);
     border: 1px solid var(--era-hair);
-    border-radius: 2rem;
+    border-radius: var(--era-radius);
     padding: 0.4rem;
   }
 
   .era-core {
     background: var(--era-core);
-    border-radius: calc(2rem - 0.375rem);
+    border-radius: var(--era-radius-in);
     box-shadow: inset 0 1px 1px rgba(255,255,255,0.14);
     padding: 1.35rem 1.45rem;
   }
@@ -380,14 +383,14 @@ CSS = r"""
   .era-track {
     margin-top: 1.1rem;
     height: 0.35rem;
-    border-radius: 999px;
+    border-radius: var(--era-chip);
     background: rgba(255,255,255,0.08);
     overflow: hidden;
   }
 
   .era-fill {
     height: 100%;
-    border-radius: 999px;
+    border-radius: var(--era-chip);
     background: linear-gradient(90deg, var(--era-teal), var(--era-violet));
     transform-origin: left center;
     animation: era-fill 1100ms var(--era-ease) both;
@@ -424,10 +427,10 @@ CSS = r"""
     display: inline-flex;
     align-items: center;
     gap: 0.75rem;
-    border-radius: 999px;
+    border-radius: var(--era-chip);
     padding: 0.45rem 0.45rem 0.45rem 1.05rem;
-    background: linear-gradient(180deg, #F3F1EC, #D9D4C8);
-    color: #111 !important;
+    background: linear-gradient(180deg, #E8C47A, #C4923A);
+    color: #14110C !important;
     text-decoration: none !important;
     font-size: 0.78rem;
     font-weight: 600;
@@ -442,8 +445,8 @@ CSS = r"""
   .era-cta-icon {
     width: 2rem;
     height: 2rem;
-    border-radius: 999px;
-    background: rgba(0,0,0,0.08);
+    border-radius: 0.5rem;
+    background: rgba(20,17,12,0.12);
     display: inline-flex;
     align-items: center;
     justify-content: center;
