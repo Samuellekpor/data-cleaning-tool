@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 
+from cleaning import CleaningOptions, apply_cleaning
 from fuzzy import scan_fuzzy_duplicates
 from io_files import FileReadError, read_uploaded_file
 from quality import QualityReport, build_quality_report
@@ -70,7 +71,7 @@ def render_quality_report(report: QualityReport) -> None:
     st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
 
 
-def render_fuzzy_scan(df: pd.DataFrame) -> None:
+def render_fuzzy_scan(df: pd.DataFrame):
     st.header("3. Fuzzy near-duplicates")
     st.caption(
         "Exact duplicates are already in the score above. This looks for "
@@ -86,10 +87,10 @@ def render_fuzzy_scan(df: pd.DataFrame) -> None:
         )
     if not scan.scanned_columns:
         st.write("No text columns were small enough to scan.")
-        return
+        return scan
     if not scan.groups:
         st.success("No near-duplicate groups found in the scanned text columns.")
-        return
+        return scan
 
     st.warning(f"Found {len(scan.groups)} near-duplicate group(s) to review.")
     for group in scan.groups:
@@ -104,7 +105,117 @@ def render_fuzzy_scan(df: pd.DataFrame) -> None:
                 }
             )
             st.dataframe(preview, use_container_width=True, hide_index=True)
-            st.caption("Apply cleaning later to collapse these to the suggested value.")
+            st.caption("Tick “Collapse near-duplicates” below to apply the suggested values.")
+    return scan
+
+
+def collect_cleaning_options(df: pd.DataFrame, has_fuzzy: bool) -> CleaningOptions:
+    st.header("4. Cleaning operations")
+    st.caption("Tick what you want, then apply. Nothing changes until you click the button.")
+
+    options = CleaningOptions()
+
+    st.subheader("Duplicates")
+    options.drop_exact_duplicates = st.checkbox(
+        "Remove exact duplicate rows",
+        help="Keeps the first copy of each duplicated row.",
+    )
+    if options.drop_exact_duplicates:
+        options.duplicate_subset = st.multiselect(
+            "Compare duplicates using these columns only (optional)",
+            list(df.columns),
+            help="Leave empty to compare entire rows.",
+        ) or None
+    options.collapse_fuzzy = st.checkbox(
+        "Collapse near-duplicates to the suggested spelling",
+        disabled=not has_fuzzy,
+        help="Uses the fuzzy groups shown above.",
+    )
+
+    st.subheader("Text, dates, and numbers")
+    options.trim_whitespace = st.checkbox("Trim whitespace on text columns", value=True)
+    options.fix_dates = st.checkbox("Fix date-like columns (parse to datetime)")
+    if options.fix_dates:
+        options.dayfirst = st.checkbox(
+            "Dates are day-first (DD/MM/YYYY)",
+            help="Turn this on for most non-US date formats.",
+        )
+    options.casing = st.selectbox(
+        "Standardize text casing",
+        ["none", "title", "lower", "upper"],
+        format_func=lambda x: {
+            "none": "Leave casing as-is",
+            "title": "Title Case",
+            "lower": "lowercase",
+            "upper": "UPPERCASE",
+        }[x],
+    )
+    options.fix_emails = st.checkbox("Validate / fix emails (trim + lowercase)")
+    options.normalize_phones = st.checkbox("Normalize phone numbers")
+    if options.normalize_phones:
+        options.phone_format = st.radio(
+            "Phone format",
+            ["digits", "dashed"],
+            format_func=lambda x: "Digits only" if x == "digits" else "###-###-####",
+            horizontal=True,
+        )
+    options.strip_currency = st.checkbox(
+        "Strip currency symbols and commas from numbers ($1,234 → 1234)"
+    )
+
+    st.subheader("Missing values")
+    options.missing_strategy = st.selectbox(
+        "How to handle missing values",
+        ["leave", "drop_rows", "drop_columns", "fill"],
+        format_func=lambda x: {
+            "leave": "Leave missing values",
+            "drop_rows": "Remove rows that have any missing value",
+            "drop_columns": "Remove columns that are mostly missing",
+            "fill": "Fill missing values",
+        }[x],
+    )
+    if options.missing_strategy == "drop_columns":
+        options.missing_threshold_pct = st.slider(
+            "Drop column if missing % is at least",
+            min_value=10,
+            max_value=100,
+            value=100,
+        )
+    if options.missing_strategy == "fill":
+        options.numeric_fill = st.selectbox(
+            "Numeric columns",
+            ["none", "mean", "median"],
+            format_func=lambda x: {
+                "none": "Do not auto-fill numbers",
+                "mean": "Fill with mean",
+                "median": "Fill with median",
+            }[x],
+        )
+        options.fill_value = st.text_input(
+            "Fill other columns with this value (optional)",
+            placeholder="e.g. Unknown",
+        )
+
+    st.subheader("Columns and empty cells")
+    options.rename_style = st.selectbox(
+        "Rename columns",
+        ["none", "snake", "lower"],
+        format_func=lambda x: {
+            "none": "Keep names",
+            "snake": "lowercase with underscores",
+            "lower": "lowercase (keep spaces)",
+        }[x],
+    )
+    with st.expander("Manual column renames"):
+        manual = {}
+        for col in df.columns:
+            new = st.text_input(f"{col}", value=str(col), key=f"rename_{col}")
+            if new.strip() and new.strip() != str(col):
+                manual[col] = new.strip()
+        options.manual_renames = manual
+    options.drop_empty_columns = st.checkbox("Remove completely empty columns")
+    options.drop_empty_rows = st.checkbox("Remove completely empty rows")
+    return options
 
 
 st.header("1. Upload your data")
@@ -138,7 +249,7 @@ if not frames:
     st.stop()
 
 names = list(frames.keys())
-selected = names[0] if len(names) == 1 else st.selectbox("Preview file", names)
+selected = names[0] if len(names) == 1 else st.selectbox("Working file", names)
 df = frames[selected]
 
 st.subheader(f"Preview — {selected}")
@@ -146,4 +257,23 @@ st.caption(f"{len(df):,} rows × {len(df.columns):,} columns")
 st.dataframe(df, use_container_width=True)
 
 render_quality_report(build_quality_report(df))
-render_fuzzy_scan(df)
+fuzzy_scan = render_fuzzy_scan(df)
+has_fuzzy = bool(fuzzy_scan and fuzzy_scan.groups)
+
+options = collect_cleaning_options(df, has_fuzzy)
+
+if st.button("Apply cleaning", type="primary"):
+    cleaned, log = apply_cleaning(df, options)
+    st.session_state["cleaned"] = cleaned
+    st.session_state["log"] = log
+    st.success("Cleaning applied. Scroll down to review the result.")
+
+cleaned = st.session_state.get("cleaned")
+if cleaned is not None:
+    st.subheader("Cleaned data")
+    st.dataframe(cleaned, use_container_width=True)
+    log = st.session_state.get("log")
+    if log:
+        st.write("Steps:")
+        for step in log.steps:
+            st.markdown(f"- {step}")
