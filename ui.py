@@ -32,7 +32,7 @@ CSS = r"""
   html, body, .stApp, [data-testid="stAppViewContainer"] {
     background: var(--era-bg) !important;
     color: var(--era-ink) !important;
-    font-family: "Plus Jakarta Sans", sans-serif !important;
+    font-family: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif !important;
   }
 
   .stApp { min-height: 100dvh; }
@@ -88,11 +88,13 @@ CSS = r"""
   }
 
   p, label, li, .stMarkdown, [data-testid="stCaption"] {
-    font-family: "Plus Jakarta Sans", sans-serif !important;
+    font-family: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif !important;
   }
 
   [data-testid="stBaseButton-headerNoPadding"],
-  [data-testid="stBaseButton-header"] {
+  [data-testid="stBaseButton-header"],
+  [data-testid="stSidebarCollapsedControl"] button,
+  [data-testid="collapsedControl"] button {
     text-transform: none !important;
     letter-spacing: normal !important;
     font-size: 1.25rem !important;
@@ -100,6 +102,7 @@ CSS = r"""
     background: transparent !important;
     border: none !important;
     box-shadow: none !important;
+    font-family: "Material Symbols Rounded", "Material Symbols Outlined" !important;
   }
 
   .material-icons,
@@ -160,14 +163,14 @@ CSS = r"""
   [data-testid="stFileUploaderDropzone"] small,
   [data-testid="stFileUploaderDropzone"] button {
     color: var(--era-muted) !important;
-    font-family: "Plus Jakarta Sans", sans-serif !important;
+    font-family: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif !important;
   }
 
   .stButton > button,
   .stDownloadButton > button,
   [data-testid="stBaseButton-primary"],
   [data-testid="stBaseButton-secondary"] {
-    font-family: "Plus Jakarta Sans", sans-serif !important;
+    font-family: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif !important;
     font-weight: 600 !important;
     letter-spacing: 0.04em !important;
     text-transform: uppercase !important;
@@ -203,7 +206,7 @@ CSS = r"""
   }
 
   [data-testid="stTabs"] button {
-    font-family: "Plus Jakarta Sans", sans-serif !important;
+    font-family: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif !important;
     border-radius: 0.5rem !important;
     color: var(--era-muted) !important;
   }
