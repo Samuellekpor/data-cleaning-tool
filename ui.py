@@ -486,11 +486,41 @@ CSS = r"""
 
   .era-steps b { color: var(--era-teal); font-family: "Syne", sans-serif; font-weight: 600; }
 
-  .era-note {
+  .era-sev {
+    display: inline-flex;
+    align-items: center;
+    border-radius: 0.4rem;
+    padding: 0.12rem 0.45rem;
+    font-size: 9px;
+    font-weight: 600;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+  }
+
+  .era-sev-high {
+    color: #F3C1A0;
+    background: rgba(243,193,160,0.12);
+    border: 1px solid rgba(243,193,160,0.28);
+  }
+
+  .era-sev-medium {
+    color: var(--era-teal);
+    background: rgba(228,179,99,0.10);
+    border: 1px solid rgba(228,179,99,0.22);
+  }
+
+  .era-sev-low {
     color: var(--era-muted);
-    font-size: 0.88rem;
-    line-height: 1.55;
-    margin-bottom: 1rem;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid var(--era-hair);
+  }
+
+  .era-finding-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+    margin-bottom: 0.65rem;
+    align-items: center;
   }
 
   @keyframes era-enter {
@@ -667,6 +697,60 @@ def note_cards(notes: list[str]) -> None:
               <div class="era-core era-insight">
                 <div class="era-index">{i:02d}</div>
                 <p>{escape(sentence)}</p>
+              </div>
+            </div>
+            """
+        )
+    st.markdown("".join(blocks), unsafe_allow_html=True)
+
+
+def finding_cards(findings) -> None:
+    if not findings:
+        st.markdown(
+            """
+            <div class="era-shell">
+              <div class="era-core">
+                <div class="era-kicker">Clean pass</div>
+                <p class="era-lede" style="margin:0">No structural issues jumped out — still read the score breakdown.</p>
+              </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        return
+    blocks = []
+    for i, finding in enumerate(findings, start=1):
+        delay = min(i * 70, 480)
+        samples = ""
+        if finding.samples:
+            shown = " · ".join(escape(str(s)) for s in finding.samples[:4])
+            samples = f'<p class="era-note" style="margin:0.65rem 0 0">Examples: {shown}</p>'
+        column = (
+            f'<span class="era-kicker" style="margin:0">{escape(finding.column)}</span>'
+            if finding.column
+            else ""
+        )
+        fix = (
+            f'<p class="era-note" style="margin:0.45rem 0 0">Recommended: {escape(finding.recommended_fix)}</p>'
+            if finding.recommended_fix
+            else ""
+        )
+        blocks.append(
+            f"""
+            <div class="era-shell era-insight-wrap" style="animation-delay:{delay}ms">
+              <div class="era-core era-insight">
+                <div class="era-index">{i:02d}</div>
+                <div>
+                  <div class="era-finding-meta">
+                    <span class="era-sev era-sev-{escape(finding.severity)}">{escape(finding.severity)}</span>
+                    <span class="era-kicker" style="margin:0">{escape(finding.pillar)}</span>
+                    {column}
+                  </div>
+                  <p>{escape(finding.title)}</p>
+                  <p class="era-note" style="margin:0.35rem 0 0">{escape(finding.detail)}</p>
+                  {samples}
+                  {fix}
+                </div>
               </div>
             </div>
             """

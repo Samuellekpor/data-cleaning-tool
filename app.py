@@ -6,11 +6,13 @@ import pandas as pd
 import streamlit as st
 
 from cleaning import CleaningOptions, apply_cleaning, preview_duplicate_rows
+from findings import collect_findings
 from fuzzy import scan_fuzzy_duplicates
 from io_files import FileReadError, merge_frames, read_uploaded_file
 from quality import QualityReport, build_quality_report
 from ui import (
     bento_tiles,
+    finding_cards,
     hero,
     inject_theme,
     note_cards,
@@ -44,21 +46,26 @@ def _score_caption(score: int) -> str:
     return "High risk — do not analyze this as-is."
 
 
-def render_quality_report(report: QualityReport) -> None:
+def render_quality_report(df: pd.DataFrame, report: QualityReport, fuzzy_scan) -> None:
     section_header(
         "02  ·  Diagnosis",
         "Data quality report",
-        "This is the raw file, unchanged. Completeness 40%, uniqueness 30%, consistency 30%.",
+        "The score is a headline. The findings below are why it is that number.",
     )
+    findings = collect_findings(df, report, fuzzy_scan)
+    high = sum(1 for f in findings if f.severity == "high")
+    caption = _score_caption(report.score)
+    if findings:
+        caption = f"{caption} {len(findings)} finding(s), {high} high."
     quality_score_bento(
         report.score,
-        _score_caption(report.score),
+        caption,
         report.completeness,
         report.uniqueness,
         report.consistency,
         report.exact_duplicate_rows,
     )
-    note_cards(report.notes)
+    finding_cards(findings)
 
     rows = []
     for col in report.columns:
@@ -78,13 +85,12 @@ def render_quality_report(report: QualityReport) -> None:
     st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
 
 
-def render_fuzzy_scan(df: pd.DataFrame):
+def render_fuzzy_scan(scan) -> None:
     section_header(
         "03  ·  Near-matches",
         "Fuzzy duplicates",
         "Exact copies are already in the score. This finds extra spaces, casing, and near-typos.",
     )
-    scan = scan_fuzzy_duplicates(df)
     if scan.skipped_columns:
         st.info(
             "Fuzzy matching was skipped for performance on columns with more "
@@ -402,9 +408,10 @@ section_header(
 )
 st.dataframe(df, use_container_width=True)
 
-render_quality_report(build_quality_report(df))
-fuzzy_scan = render_fuzzy_scan(df)
-has_fuzzy = bool(fuzzy_scan and fuzzy_scan.groups)
+fuzzy_scan = scan_fuzzy_duplicates(df)
+render_quality_report(df, build_quality_report(df), fuzzy_scan)
+render_fuzzy_scan(fuzzy_scan)
+has_fuzzy = bool(fuzzy_scan.groups)
 
 options = collect_cleaning_options(df, has_fuzzy)
 render_pre_apply_preview(df, options)
