@@ -588,7 +588,7 @@ def sidebar_chrome() -> None:
         <ol class="era-steps">
           <li><b>01</b><span>Drop .xlsx, .xls, or .csv — several files are fine</span></li>
           <li><b>02</b><span>Read the quality score first. Nothing has been cleaned yet</span></li>
-          <li><b>03</b><span>Review fuzzy groups, tick the steps you trust</span></li>
+          <li><b>03</b><span>Apply recommended fixes, or open advanced operations</span></li>
           <li><b>04</b><span>Apply, compare before/after, then export</span></li>
         </ol>
         <p class="era-note">Need a polished briefing from the cleaned table?</p>

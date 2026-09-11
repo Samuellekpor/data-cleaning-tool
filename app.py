@@ -137,14 +137,14 @@ def render_finding_actions(working: pd.DataFrame, original: pd.DataFrame, findin
     if not actionable:
         return
     st.caption("Apply a recommended fix. The working table and score refresh immediately.")
+    seen: set[str] = set()
     keys: list[str] = []
     for finding in actionable:
-        if finding.fix_key not in keys:
-            keys.append(finding.fix_key)
-        label = finding.recommended_fix
-        if finding.column:
-            label = f"{finding.recommended_fix} — {finding.column}"
-        if st.button(label, key=f"fix_{finding.id}"):
+        if finding.fix_key in seen:
+            continue
+        seen.add(finding.fix_key)
+        keys.append(finding.fix_key)
+        if st.button(finding.recommended_fix, key=f"fix_{finding.fix_key}"):
             cleaned, log = apply_cleaning(working, options_from_fix_keys([finding.fix_key]))
             _commit_clean(original, cleaned, log)
             st.rerun()
@@ -155,11 +155,12 @@ def render_finding_actions(working: pd.DataFrame, original: pd.DataFrame, findin
 
 
 def collect_cleaning_options(df: pd.DataFrame, has_fuzzy: bool) -> CleaningOptions:
-    section_header(
-        "04  ·  Operations",
-        "Cleaning steps",
-        "Tick what you trust. Nothing changes until you apply.",
-    )
+    with st.expander("Advanced operations — full toolkit"):
+        st.caption("Use this when a finding has no one-click fix, or you want extra control.")
+        return _collect_cleaning_options_body(df, has_fuzzy)
+
+
+def _collect_cleaning_options_body(df: pd.DataFrame, has_fuzzy: bool) -> CleaningOptions:
     options = CleaningOptions()
 
     st.subheader("Duplicates")
@@ -180,7 +181,7 @@ def collect_cleaning_options(df: pd.DataFrame, has_fuzzy: bool) -> CleaningOptio
     )
 
     st.subheader("Text, dates, and numbers")
-    options.trim_whitespace = st.checkbox("Trim whitespace on text columns", value=True)
+    options.trim_whitespace = st.checkbox("Trim whitespace on text columns")
     options.fix_dates = st.checkbox("Fix date-like columns (parse to datetime)")
     if options.fix_dates:
         options.dayfirst = st.checkbox(
@@ -449,10 +450,15 @@ st.dataframe(working, use_container_width=True)
 
 fuzzy_scan = scan_fuzzy_duplicates(working)
 findings = render_quality_report(working, build_quality_report(working), fuzzy_scan)
-render_finding_actions(working, source, findings)
 render_fuzzy_scan(fuzzy_scan)
 has_fuzzy = bool(fuzzy_scan.groups)
 
+section_header(
+    "04  ·  Operations",
+    "Fix what the score found",
+    "Recommended fixes first. The full toolkit stays in Advanced.",
+)
+render_finding_actions(working, source, findings)
 options = collect_cleaning_options(working, has_fuzzy)
 render_pre_apply_preview(working, options)
 
