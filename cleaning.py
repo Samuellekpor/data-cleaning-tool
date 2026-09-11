@@ -8,7 +8,7 @@ from typing import Any
 
 import pandas as pd
 
-from fuzzy import scan_fuzzy_duplicates
+from fuzzy import FuzzyGroup, scan_fuzzy_duplicates
 from quality import detect_date_formats, infer_role
 
 CURRENCY_RE = re.compile(r"[\$€£¥₹,\s]")
@@ -113,6 +113,29 @@ def preview_duplicate_rows(df: pd.DataFrame, subset: list[str] | None) -> pd.Dat
     if not cols:
         return df.iloc[0:0]
     return df[df.duplicated(subset=cols, keep="first")].copy()
+
+
+def options_from_fix_keys(keys: list[str]) -> CleaningOptions:
+    """Turn finding fix keys into a single CleaningOptions payload."""
+    opts = CleaningOptions()
+    for key in keys:
+        if key == "drop_exact_duplicates":
+            opts.drop_exact_duplicates = True
+        elif key == "collapse_fuzzy":
+            opts.collapse_fuzzy = True
+        elif key == "fix_dates":
+            opts.fix_dates = True
+        elif key == "fix_emails":
+            opts.fix_emails = True
+        elif key == "normalize_phones":
+            opts.normalize_phones = True
+        elif key == "drop_empty_columns":
+            opts.drop_empty_columns = True
+        elif key == "trim_whitespace":
+            opts.trim_whitespace = True
+        elif key == "strip_currency":
+            opts.strip_currency = True
+    return opts
 
 
 def apply_cleaning(

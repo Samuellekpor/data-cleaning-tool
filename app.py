@@ -5,7 +5,7 @@ import io
 import pandas as pd
 import streamlit as st
 
-from cleaning import CleaningOptions, apply_cleaning, preview_duplicate_rows
+from cleaning import CleaningOptions, apply_cleaning, options_from_fix_keys, preview_duplicate_rows
 from findings import collect_findings
 from fuzzy import scan_fuzzy_duplicates
 from io_files import FileReadError, merge_frames, read_uploaded_file
@@ -83,6 +83,7 @@ def render_quality_report(df: pd.DataFrame, report: QualityReport, fuzzy_scan) -
         )
     st.caption("Column-by-column diagnosis")
     st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+    return findings
 
 
 def render_fuzzy_scan(scan) -> None:
@@ -117,8 +118,40 @@ def render_fuzzy_scan(scan) -> None:
                 }
             )
             st.dataframe(preview, use_container_width=True, hide_index=True)
-            st.caption("Tick “Collapse near-duplicates” below to apply the suggested values.")
+            st.caption("Tick “Collapse near-duplicates” in advanced cleaning to apply the suggested values.")
     return scan
+
+
+def _commit_clean(original: pd.DataFrame, cleaned: pd.DataFrame, log) -> None:
+    st.session_state["working"] = cleaned
+    st.session_state["cleaned"] = cleaned
+    st.session_state["original"] = original
+    st.session_state["log"] = log
+    steps = list(st.session_state.get("applied_steps") or [])
+    steps.extend(log.steps)
+    st.session_state["applied_steps"] = steps
+
+
+def render_finding_actions(working: pd.DataFrame, original: pd.DataFrame, findings) -> None:
+    actionable = [f for f in findings if f.fix_key]
+    if not actionable:
+        return
+    st.caption("Apply a recommended fix. The working table and score refresh immediately.")
+    keys: list[str] = []
+    for finding in actionable:
+        if finding.fix_key not in keys:
+            keys.append(finding.fix_key)
+        label = finding.recommended_fix
+        if finding.column:
+            label = f"{finding.recommended_fix} — {finding.column}"
+        if st.button(label, key=f"fix_{finding.id}"):
+            cleaned, log = apply_cleaning(working, options_from_fix_keys([finding.fix_key]))
+            _commit_clean(original, cleaned, log)
+            st.rerun()
+    if st.button("Apply all recommended fixes", type="primary"):
+        cleaned, log = apply_cleaning(working, options_from_fix_keys(keys))
+        _commit_clean(original, cleaned, log)
+        st.rerun()
 
 
 def collect_cleaning_options(df: pd.DataFrame, has_fuzzy: bool) -> CleaningOptions:
@@ -397,31 +430,37 @@ else:
 file_key = f"{selected}:{len(df)}:{tuple(df.columns)}"
 if st.session_state.get("file_key") != file_key:
     st.session_state["file_key"] = file_key
+    st.session_state["source"] = df.copy()
+    st.session_state["working"] = df.copy()
+    st.session_state["applied_steps"] = []
     st.session_state.pop("cleaned", None)
     st.session_state.pop("log", None)
     st.session_state.pop("original", None)
 
+source = st.session_state.get("source", df)
+working = st.session_state.get("working", df)
+
 section_header(
     "Receipt",
     f"Preview — {selected}",
-    f"{len(df):,} rows × {len(df.columns):,} columns in the working table.",
+    f"{len(working):,} rows × {len(working.columns):,} columns in the working table.",
 )
-st.dataframe(df, use_container_width=True)
+st.dataframe(working, use_container_width=True)
 
-fuzzy_scan = scan_fuzzy_duplicates(df)
-render_quality_report(df, build_quality_report(df), fuzzy_scan)
+fuzzy_scan = scan_fuzzy_duplicates(working)
+findings = render_quality_report(working, build_quality_report(working), fuzzy_scan)
+render_finding_actions(working, source, findings)
 render_fuzzy_scan(fuzzy_scan)
 has_fuzzy = bool(fuzzy_scan.groups)
 
-options = collect_cleaning_options(df, has_fuzzy)
-render_pre_apply_preview(df, options)
+options = collect_cleaning_options(working, has_fuzzy)
+render_pre_apply_preview(working, options)
 
 if st.button("Apply cleaning", type="primary"):
-    cleaned, log = apply_cleaning(df, options)
-    st.session_state["cleaned"] = cleaned
-    st.session_state["log"] = log
-    st.session_state["original"] = df
+    cleaned, log = apply_cleaning(working, options)
+    _commit_clean(source, cleaned, log)
     st.success("Cleaning applied. Review the before/after below.")
+    st.rerun()
 
 cleaned = st.session_state.get("cleaned")
 log = st.session_state.get("log")
