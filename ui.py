@@ -588,7 +588,7 @@ def sidebar_chrome() -> None:
         <ol class="era-steps">
           <li><b>01</b><span>Drop .xlsx, .xls, or .csv — several files are fine</span></li>
           <li><b>02</b><span>Read the quality score first. Nothing has been cleaned yet</span></li>
-          <li><b>03</b><span>Apply recommended fixes, or open advanced operations</span></li>
+          <li><b>03</b><span>Approve the plan — skip any step you do not want</span></li>
           <li><b>04</b><span>Apply, compare before/after, then export</span></li>
         </ol>
         <p class="era-note">Need a polished briefing from the cleaned table?</p>
@@ -702,6 +702,33 @@ def note_cards(notes: list[str]) -> None:
             """
         )
     st.markdown("".join(blocks), unsafe_allow_html=True)
+
+
+def recipe_banner(line: str) -> None:
+    if not line or line == "No steps selected":
+        st.markdown(
+            """
+            <div class="era-shell">
+              <div class="era-core">
+                <div class="era-kicker">Proposed plan</div>
+                <p class="era-lede" style="margin:0">Nothing to apply — skip to Advanced if you still want a manual pass.</p>
+              </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        return
+    st.markdown(
+        f"""
+        <div class="era-shell">
+          <div class="era-core">
+            <div class="era-kicker">Proposed plan</div>
+            <p class="era-lede" style="margin:0.35rem 0 0">{escape(line)}</p>
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
 
 def finding_cards(findings) -> None:

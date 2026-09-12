@@ -10,6 +10,7 @@ from findings import collect_findings
 from fuzzy import scan_fuzzy_duplicates
 from io_files import FileReadError, merge_frames, read_uploaded_file
 from quality import QualityReport, build_quality_report
+from recipe import build_recipe, recipe_line
 from ui import (
     bento_tiles,
     finding_cards,
@@ -17,6 +18,7 @@ from ui import (
     inject_theme,
     note_cards,
     quality_score_bento,
+    recipe_banner,
     section_header,
     sidebar_chrome,
 )
@@ -132,26 +134,35 @@ def _commit_clean(original: pd.DataFrame, cleaned: pd.DataFrame, log) -> None:
     st.session_state["applied_steps"] = steps
 
 
-def render_finding_actions(working: pd.DataFrame, original: pd.DataFrame, findings) -> None:
-    actionable = [f for f in findings if f.fix_key]
-    if not actionable:
-        return
-    st.caption("Apply a recommended fix. The working table and score refresh immediately.")
-    seen: set[str] = set()
-    keys: list[str] = []
-    for finding in actionable:
-        if finding.fix_key in seen:
-            continue
-        seen.add(finding.fix_key)
-        keys.append(finding.fix_key)
-        if st.button(finding.recommended_fix, key=f"fix_{finding.fix_key}"):
-            cleaned, log = apply_cleaning(working, options_from_fix_keys([finding.fix_key]))
-            _commit_clean(original, cleaned, log)
-            st.rerun()
-    if st.button("Apply all recommended fixes", type="primary"):
-        cleaned, log = apply_cleaning(working, options_from_fix_keys(keys))
-        _commit_clean(original, cleaned, log)
-        st.rerun()
+def render_recipe_editor(recipe) -> tuple[list[str], bool]:
+    """Let the user accept, skip, or tweak the proposed plan. Does not apply yet."""
+    included: list[str] = []
+    for step in recipe:
+        cols = st.columns([0.12, 0.88])
+        with cols[0]:
+            on = st.checkbox(
+                step.label,
+                value=step.default_include,
+                key=f"recipe_{step.fix_key}",
+                label_visibility="collapsed",
+            )
+        with cols[1]:
+            status = "in plan" if on else "skipped"
+            st.markdown(
+                f"**{step.label}** · {step.highest_severity} · {status}  \n"
+                f"{step.summary}"
+            )
+        if on:
+            included.append(step.fix_key)
+    recipe_banner(recipe_line(recipe, included))
+    dayfirst = False
+    if "fix_dates" in included:
+        dayfirst = st.checkbox(
+            "Dates are day-first (DD/MM/YYYY)",
+            help="Turn this on for most non-US date formats.",
+            key="recipe_dayfirst",
+        )
+    return included, dayfirst
 
 
 def collect_cleaning_options(df: pd.DataFrame, has_fuzzy: bool) -> CleaningOptions:
@@ -454,11 +465,12 @@ render_fuzzy_scan(fuzzy_scan)
 has_fuzzy = bool(fuzzy_scan.groups)
 
 section_header(
-    "04  ·  Operations",
-    "Fix what the score found",
-    "Recommended fixes first. The full toolkit stays in Advanced.",
+    "04  ·  Plan",
+    "Approve the repair plan",
+    "Accept the proposed sequence, skip any step, then apply. The toolkit stays in Advanced.",
 )
-render_finding_actions(working, source, findings)
+recipe = build_recipe(findings)
+included_keys, recipe_dayfirst = render_recipe_editor(recipe)
 options = collect_cleaning_options(working, has_fuzzy)
 render_pre_apply_preview(working, options)
 
