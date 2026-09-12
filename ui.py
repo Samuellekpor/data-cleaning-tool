@@ -628,16 +628,44 @@ def quality_score_bento(
     uniqueness: float,
     consistency: float,
     duplicates: int,
+    *,
+    after_score: int | None = None,
+    after_completeness: float | None = None,
+    after_uniqueness: float | None = None,
+    after_consistency: float | None = None,
+    after_duplicates: int | None = None,
 ) -> None:
-    width = max(0.0, min(100.0, float(score)))
+    def _pair(before: float | int, after: float | int | None, as_int: bool = True) -> str:
+        if after is None:
+            return f"{int(before)}" if as_int else f"{before:.0f}"
+        left = int(before) if as_int else f"{before:.0f}"
+        right = int(after) if as_int else f"{after:.0f}"
+        return f"{left}<span style=\"font-size:0.45em;letter-spacing:-0.02em;color:rgba(246,240,230,0.45)\"> → </span>{right}"
+
+    headline = score if after_score is None else after_score
+    width = max(0.0, min(100.0, float(headline)))
+    kicker = "Your data quality score" if after_score is None else "Score before → after"
+    big = (
+        f'{score}<span style="font-size:0.38em;letter-spacing:-0.02em;color:rgba(243,241,236,0.45)">/100</span>'
+        if after_score is None
+        else (
+            f'{score}<span style="font-size:0.38em;letter-spacing:-0.02em;color:rgba(243,241,236,0.45)"> → </span>'
+            f'{after_score}<span style="font-size:0.38em;letter-spacing:-0.02em;color:rgba(243,241,236,0.45)">/100</span>'
+        )
+    )
+    copies_hint = (
+        "Duplicate rows in the raw file"
+        if after_duplicates is None
+        else f"Was {duplicates:,} exact copies"
+    )
     st.markdown(
         f"""
         <div class="era-bento">
           <div class="era-tile-xl">
             <div class="era-shell">
               <div class="era-core">
-                <div class="era-kicker">Your data quality score</div>
-                <div class="era-value-xl">{score}<span style="font-size:0.38em;letter-spacing:-0.02em;color:rgba(243,241,236,0.45)">/100</span></div>
+                <div class="era-kicker">{kicker}</div>
+                <div class="era-value-xl">{big}</div>
                 <p class="era-note" style="margin:0.85rem 0 0">{escape(caption)}</p>
                 <div class="era-track"><div class="era-fill" style="width:{width}%"></div></div>
               </div>
@@ -647,7 +675,7 @@ def quality_score_bento(
             <div class="era-shell">
               <div class="era-core">
                 <div class="era-kicker">Completeness</div>
-                <div class="era-value">{completeness:.0f}</div>
+                <div class="era-value">{_pair(completeness, after_completeness, as_int=True)}</div>
                 <p class="era-note" style="margin:0.65rem 0 0">Weight ~40%</p>
               </div>
             </div>
@@ -656,7 +684,7 @@ def quality_score_bento(
             <div class="era-shell">
               <div class="era-core">
                 <div class="era-kicker">Uniqueness</div>
-                <div class="era-value">{uniqueness:.0f}</div>
+                <div class="era-value">{_pair(uniqueness, after_uniqueness, as_int=True)}</div>
                 <p class="era-note" style="margin:0.65rem 0 0">Weight ~30%</p>
               </div>
             </div>
@@ -665,7 +693,7 @@ def quality_score_bento(
             <div class="era-shell">
               <div class="era-core">
                 <div class="era-kicker">Consistency</div>
-                <div class="era-value">{consistency:.0f}</div>
+                <div class="era-value">{_pair(consistency, after_consistency, as_int=True)}</div>
                 <p class="era-note" style="margin:0.65rem 0 0">Weight ~30%</p>
               </div>
             </div>
@@ -674,8 +702,8 @@ def quality_score_bento(
             <div class="era-shell">
               <div class="era-core">
                 <div class="era-kicker">Exact copies</div>
-                <div class="era-value">{duplicates:,}</div>
-                <p class="era-note" style="margin:0.65rem 0 0">Duplicate rows in the raw file</p>
+                <div class="era-value">{_pair(duplicates, after_duplicates, as_int=True)}</div>
+                <p class="era-note" style="margin:0.65rem 0 0">{escape(copies_hint)}</p>
               </div>
             </div>
           </div>

@@ -307,14 +307,29 @@ def render_before_after(original: pd.DataFrame, cleaned: pd.DataFrame, log) -> N
     section_header(
         "05  ·  Receipt",
         "Before vs after",
-        "Proof of what changed — then download the cleaned table.",
+        "The same score, before the plan and after. This is the screenshot to send.",
     )
-    after_report = build_quality_report(cleaned)
+    before = build_quality_report(original)
+    after = build_quality_report(cleaned)
+    delta = after.score - before.score
+    sign = f"+{delta}" if delta > 0 else str(delta)
+    quality_score_bento(
+        before.score,
+        f"{_score_caption(after.score)} Change {sign} points.",
+        before.completeness,
+        before.uniqueness,
+        before.consistency,
+        before.exact_duplicate_rows,
+        after_score=after.score,
+        after_completeness=after.completeness,
+        after_uniqueness=after.uniqueness,
+        after_consistency=after.consistency,
+        after_duplicates=after.exact_duplicate_rows,
+    )
     bento_tiles(
         [
             ("era-tile-lg", "Rows", f"{log.rows_after:,}", f"Was {log.rows_before:,}"),
-            ("era-tile", "Columns", f"{log.cols_after:,}", f"Was {log.cols_before:,}"),
-            ("era-tile", "Score after", f"{after_report.score}/100", "Quality on the cleaned table"),
+            ("era-tile-lg", "Columns", f"{log.cols_after:,}", f"Was {log.cols_before:,}"),
         ]
     )
     st.caption("Change summary")
