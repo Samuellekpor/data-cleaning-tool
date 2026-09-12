@@ -471,13 +471,21 @@ section_header(
 )
 recipe = build_recipe(findings)
 included_keys, recipe_dayfirst = render_recipe_editor(recipe)
+
+if st.button("Accept plan", type="primary", disabled=not included_keys):
+    plan = options_from_fix_keys(included_keys, dayfirst=recipe_dayfirst)
+    cleaned, log = apply_cleaning(source, plan)
+    _commit_clean(source, cleaned, log)
+    st.success("Plan applied from the original file. Review the score change below.")
+    st.rerun()
+
 options = collect_cleaning_options(working, has_fuzzy)
 render_pre_apply_preview(working, options)
 
-if st.button("Apply cleaning", type="primary"):
+if st.button("Apply advanced cleaning"):
     cleaned, log = apply_cleaning(working, options)
     _commit_clean(source, cleaned, log)
-    st.success("Cleaning applied. Review the before/after below.")
+    st.success("Advanced cleaning applied. Review the before/after below.")
     st.rerun()
 
 cleaned = st.session_state.get("cleaned")

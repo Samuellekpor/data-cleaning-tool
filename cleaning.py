@@ -115,7 +115,7 @@ def preview_duplicate_rows(df: pd.DataFrame, subset: list[str] | None) -> pd.Dat
     return df[df.duplicated(subset=cols, keep="first")].copy()
 
 
-def options_from_fix_keys(keys: list[str]) -> CleaningOptions:
+def options_from_fix_keys(keys: list[str], *, dayfirst: bool = False) -> CleaningOptions:
     """Turn finding fix keys into a single CleaningOptions payload."""
     opts = CleaningOptions()
     for key in keys:
@@ -135,6 +135,7 @@ def options_from_fix_keys(keys: list[str]) -> CleaningOptions:
             opts.trim_whitespace = True
         elif key == "strip_currency":
             opts.strip_currency = True
+    opts.dayfirst = dayfirst
     return opts
 
 
