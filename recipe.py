@@ -1,0 +1,88 @@
+"""Turn findings into an ordered, reviewable cleaning recipe."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+
+from findings import Finding, SEVERITY_ORDER
+
+# Matches the order apply_cleaning actually runs.
+STEP_ORDER = (
+    "trim_whitespace",
+    "collapse_fuzzy",
+    "fix_emails",
+    "normalize_phones",
+    "strip_currency",
+    "fix_dates",
+    "drop_empty_columns",
+    "drop_exact_duplicates",
+)
+
+STEP_LABELS = {
+    "trim_whitespace": "Trim whitespace",
+    "collapse_fuzzy": "Collapse near-duplicates",
+    "fix_emails": "Fix emails",
+    "normalize_phones": "Normalize phones",
+    "strip_currency": "Strip currency",
+    "fix_dates": "Parse dates",
+    "drop_empty_columns": "Remove empty columns",
+    "drop_exact_duplicates": "Drop exact duplicates",
+}
+
+
+@dataclass
+class RecipeStep:
+    fix_key: str
+    label: str
+    summary: str
+    finding_ids: list[str]
+    columns: list[str] = field(default_factory=list)
+    default_include: bool = True
+    highest_severity: str = "low"
+
+
+def _include_by_default(severity: str) -> bool:
+    # High/medium always on. Trim stays on even when it is a low finding —
+    # it is cheap and often unlocks the rest of the plan.
+    return severity in {"high", "medium"}
+
+
+def build_recipe(findings: list[Finding]) -> list[RecipeStep]:
+    """One step per fix_key, ordered like the cleaner, not like the finding list."""
+    buckets: dict[str, list[Finding]] = {key: [] for key in STEP_ORDER}
+    for finding in findings:
+        if finding.fix_key in buckets:
+            buckets[finding.fix_key].append(finding)
+
+    steps: list[RecipeStep] = []
+    for key in STEP_ORDER:
+        group = buckets[key]
+        if not group:
+            continue
+        highest = min(group, key=lambda f: SEVERITY_ORDER.get(f.severity, 9)).severity
+        columns = sorted({f.column for f in group if f.column})
+        titles = [f.title for f in group[:3]]
+        if len(group) > 3:
+            titles.append(f"+{len(group) - 3} more")
+        default = _include_by_default(highest) or key == "trim_whitespace"
+        steps.append(
+            RecipeStep(
+                fix_key=key,
+                label=STEP_LABELS[key],
+                summary=" · ".join(titles),
+                finding_ids=[f.id for f in group],
+                columns=columns,
+                default_include=default,
+                highest_severity=highest,
+            )
+        )
+    return steps
+
+
+def recipe_line(steps: list[RecipeStep], included_keys: list[str] | None = None) -> str:
+    """Human-readable plan, e.g. Trim → Parse dates → Drop exact duplicates."""
+    chosen = set(included_keys) if included_keys is not None else {
+        s.fix_key for s in steps if s.default_include
+    }
+    labels = [s.label for s in steps if s.fix_key in chosen]
+    return " → ".join(labels) if labels else "No steps selected"
