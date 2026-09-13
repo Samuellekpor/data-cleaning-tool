@@ -531,7 +531,11 @@ recipe = build_recipe(findings)
 included_keys, recipe_dayfirst = render_recipe_editor(recipe)
 
 if st.button("Accept plan", type="primary", disabled=not included_keys):
-    plan = options_from_fix_keys(included_keys, dayfirst=recipe_dayfirst)
+    plan = options_from_fix_keys(
+        included_keys,
+        dayfirst=recipe_dayfirst,
+        fuzzy_groups=st.session_state.get("fuzzy_selected"),
+    )
     cleaned, log = apply_cleaning(source, plan)
     _commit_clean(source, cleaned, log)
     st.success("Plan applied from the original file. Review the score change below.")
@@ -541,6 +545,8 @@ options = collect_cleaning_options(working, has_fuzzy)
 render_pre_apply_preview(working, options)
 
 if st.button("Apply advanced cleaning"):
+    if options.collapse_fuzzy and options.fuzzy_groups is None:
+        options.fuzzy_groups = st.session_state.get("fuzzy_selected")
     cleaned, log = apply_cleaning(working, options)
     _commit_clean(source, cleaned, log)
     st.success("Advanced cleaning applied. Review the before/after below.")

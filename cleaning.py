@@ -35,7 +35,7 @@ class CleaningOptions:
     drop_empty_rows: bool = False
     drop_empty_columns: bool = False
     collapse_fuzzy: bool = False
-    fuzzy_groups: list[FuzzyGroup] = field(default_factory=list)
+    fuzzy_groups: list[FuzzyGroup] | None = None
 
 
 @dataclass
@@ -115,7 +115,12 @@ def preview_duplicate_rows(df: pd.DataFrame, subset: list[str] | None) -> pd.Dat
     return df[df.duplicated(subset=cols, keep="first")].copy()
 
 
-def options_from_fix_keys(keys: list[str], *, dayfirst: bool = False) -> CleaningOptions:
+def options_from_fix_keys(
+    keys: list[str],
+    *,
+    dayfirst: bool = False,
+    fuzzy_groups: list | None = None,
+) -> CleaningOptions:
     """Turn finding fix keys into a single CleaningOptions payload."""
     opts = CleaningOptions()
     for key in keys:
@@ -136,6 +141,8 @@ def options_from_fix_keys(keys: list[str], *, dayfirst: bool = False) -> Cleanin
         elif key == "strip_currency":
             opts.strip_currency = True
     opts.dayfirst = dayfirst
+    if fuzzy_groups is not None:
+        opts.fuzzy_groups = list(fuzzy_groups)
     return opts
 
 
@@ -154,19 +161,27 @@ def apply_cleaning(
         log.standardized.append("whitespace")
 
     if options.collapse_fuzzy:
-        groups = scan_fuzzy_duplicates(out).groups
+        groups = (
+            options.fuzzy_groups
+            if options.fuzzy_groups is not None
+            else scan_fuzzy_duplicates(out).groups
+        )
         collapsed = 0
+        merged_groups = 0
         for group in groups:
             mapping = {v: group.suggested for v in group.variants if v != group.suggested}
             if mapping:
                 matched = out[group.column].isin(mapping.keys())
                 collapsed += int(matched.sum())
+                merged_groups += 1
                 out[group.column] = out[group.column].replace(mapping)
         log.fuzzy_collapsed = collapsed
         if collapsed:
             log.steps.append(
-                f"Collapsed {collapsed} near-duplicate text value(s) to suggested spellings."
+                f"Collapsed {collapsed} near-duplicate value(s) across {merged_groups} group(s)."
             )
+        elif not groups:
+            log.steps.append("Fuzzy collapse skipped — no groups were selected.")
 
     if options.casing != "none":
         fn = {"title": str.title, "lower": str.lower, "upper": str.upper}[options.casing]
