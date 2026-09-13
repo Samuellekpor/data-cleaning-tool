@@ -7,7 +7,7 @@ import streamlit as st
 
 from cleaning import CleaningOptions, apply_cleaning, options_from_fix_keys, preview_duplicate_rows
 from findings import collect_findings
-from fuzzy import scan_fuzzy_duplicates
+from fuzzy import FuzzyGroup, scan_fuzzy_duplicates
 from io_files import FileReadError, merge_frames, read_uploaded_file
 from quality import QualityReport, build_quality_report
 from recipe import build_recipe, recipe_line
@@ -88,11 +88,11 @@ def render_quality_report(df: pd.DataFrame, report: QualityReport, fuzzy_scan) -
     return findings
 
 
-def render_fuzzy_scan(scan) -> None:
+def render_fuzzy_scan(scan) -> list[FuzzyGroup]:
     section_header(
         "03  ·  Near-matches",
         "Fuzzy duplicates",
-        "Exact copies are already in the score. This finds extra spaces, casing, and near-typos.",
+        "Pick a keeper per group. Uncheck a group or skip a column to leave those spellings alone.",
     )
     if scan.skipped_columns:
         st.info(
@@ -102,26 +102,68 @@ def render_fuzzy_scan(scan) -> None:
         )
     if not scan.scanned_columns:
         st.info("No text columns were small enough to scan.")
-        return scan
+        st.session_state["fuzzy_selected"] = []
+        return []
     if not scan.groups:
         st.success("No near-duplicate groups found in the scanned text columns.")
-        return scan
+        st.session_state["fuzzy_selected"] = []
+        return []
 
     st.warning(f"Found {len(scan.groups)} near-duplicate group(s) to review.")
+    prefix = str(st.session_state.get("file_key", ""))
+    selected: list[FuzzyGroup] = []
+    by_column: dict[str, list] = {}
     for group in scan.groups:
-        with st.expander(
-            f"{group.column}: {len(group.variants)} spellings → keep “{group.suggested}”"
-        ):
-            preview = pd.DataFrame(
-                {
-                    "value": group.variants,
-                    "rows": [group.counts[v] for v in group.variants],
-                    "suggested keep": [v == group.suggested for v in group.variants],
-                }
-            )
-            st.dataframe(preview, use_container_width=True, hide_index=True)
-            st.caption("Tick “Collapse near-duplicates” in advanced cleaning to apply the suggested values.")
-    return scan
+        by_column.setdefault(group.column, []).append(group)
+
+    for column, groups in by_column.items():
+        skip_col = st.checkbox(
+            f"Skip column “{column}”",
+            value=False,
+            key=f"fuzzy_skipcol_{prefix}_{column}",
+            help="Leave every spelling in this column unchanged.",
+        )
+        if skip_col:
+            continue
+        for group in groups:
+            why = ", ".join(group.reasons) if group.reasons else "similar text"
+            with st.expander(
+                f"{column}: {len(group.variants)} spellings · {why} → keep “{group.suggested}”"
+            ):
+                include = st.checkbox(
+                    "Merge this group",
+                    value=True,
+                    key=f"fuzzy_inc_{prefix}_{group.group_id}",
+                )
+                preview = pd.DataFrame(
+                    {
+                        "value": group.variants,
+                        "rows": [group.counts[v] for v in group.variants],
+                    }
+                )
+                st.dataframe(preview, use_container_width=True, hide_index=True)
+                st.caption(f"Why: {why}.")
+                default_idx = group.variants.index(group.suggested) if group.suggested in group.variants else 0
+                keeper = st.radio(
+                    "Keep this spelling",
+                    group.variants,
+                    index=default_idx,
+                    key=f"fuzzy_keep_{prefix}_{group.group_id}",
+                )
+                if include:
+                    chosen = FuzzyGroup(
+                        column=group.column,
+                        variants=group.variants,
+                        counts=group.counts,
+                        suggested=keeper,
+                        reasons=group.reasons,
+                        similarity=group.similarity,
+                        group_id=group.group_id,
+                    )
+                    selected.append(chosen)
+    st.session_state["fuzzy_selected"] = selected
+    st.caption(f"{len(selected)} group(s) will merge if you include Collapse near-duplicates in the plan.")
+    return selected
 
 
 def _commit_clean(original: pd.DataFrame, cleaned: pd.DataFrame, log) -> None:
@@ -463,6 +505,7 @@ if st.session_state.get("file_key") != file_key:
     st.session_state.pop("cleaned", None)
     st.session_state.pop("log", None)
     st.session_state.pop("original", None)
+    st.session_state.pop("fuzzy_selected", None)
 
 source = st.session_state.get("source", df)
 working = st.session_state.get("working", df)
@@ -476,8 +519,8 @@ st.dataframe(working, use_container_width=True)
 
 fuzzy_scan = scan_fuzzy_duplicates(working)
 findings = render_quality_report(working, build_quality_report(working), fuzzy_scan)
-render_fuzzy_scan(fuzzy_scan)
-has_fuzzy = bool(fuzzy_scan.groups)
+fuzzy_selected = render_fuzzy_scan(fuzzy_scan)
+has_fuzzy = bool(fuzzy_selected)
 
 section_header(
     "04  ·  Plan",
