@@ -7,7 +7,7 @@ import streamlit as st
 
 from cleaning import CleaningOptions, apply_cleaning, options_from_fix_keys, preview_duplicate_rows
 from findings import collect_findings
-from fuzzy import FuzzyGroup, scan_fuzzy_duplicates
+from fuzzy import MAX_UNIQUE, FuzzyGroup, scan_fuzzy_duplicates
 from io_files import FileReadError, merge_frames, read_uploaded_file
 from quality import QualityReport, build_quality_report
 from recipe import build_recipe, recipe_line
@@ -95,11 +95,25 @@ def render_fuzzy_scan(scan) -> list[FuzzyGroup]:
         "Pick a keeper per group. Uncheck a group or skip a column to leave those spellings alone.",
     )
     if scan.skipped_columns:
-        st.info(
-            "Fuzzy matching was skipped for performance on columns with more "
-            "than 5,000 unique values: "
-            + ", ".join(scan.skipped_columns)
+        st.warning(
+            "These columns were not scanned — too many unique values for a full pass. "
+            "Turn on Scan anyway if you need them; it can take a while."
         )
+        prefix = str(st.session_state.get("file_key", ""))
+        for col in scan.skipped_columns:
+            n = scan.skipped_unique_counts.get(col, 0)
+            st.checkbox(
+                f"Scan “{col}” anyway ({n:,} unique values)",
+                value=False,
+                key=f"fuzzy_force_{prefix}_{col}",
+                help=f"Scans the {MAX_UNIQUE:,} most common values in this column (not every unique).",
+            )
+    if scan.sampled_columns:
+        bits = [
+            f"{col} ({n:,} unique, scanned top {MAX_UNIQUE:,})"
+            for col, n in scan.sampled_columns.items()
+        ]
+        st.caption("Sampled for speed: " + "; ".join(bits))
     if not scan.scanned_columns:
         st.info("No text columns were small enough to scan.")
         st.session_state["fuzzy_selected"] = []
@@ -506,6 +520,7 @@ if st.session_state.get("file_key") != file_key:
     st.session_state.pop("log", None)
     st.session_state.pop("original", None)
     st.session_state.pop("fuzzy_selected", None)
+    st.session_state.pop("fuzzy_skipped_last", None)
 
 source = st.session_state.get("source", df)
 working = st.session_state.get("working", df)
@@ -517,7 +532,14 @@ section_header(
 )
 st.dataframe(working, use_container_width=True)
 
-fuzzy_scan = scan_fuzzy_duplicates(working)
+prefix = str(st.session_state.get("file_key", ""))
+force_columns = {
+    col
+    for col in (st.session_state.get("fuzzy_skipped_last") or [])
+    if st.session_state.get(f"fuzzy_force_{prefix}_{col}")
+}
+fuzzy_scan = scan_fuzzy_duplicates(working, force_columns=force_columns)
+st.session_state["fuzzy_skipped_last"] = list(fuzzy_scan.skipped_columns)
 findings = render_quality_report(working, build_quality_report(working), fuzzy_scan)
 fuzzy_selected = render_fuzzy_scan(fuzzy_scan)
 has_fuzzy = bool(fuzzy_selected)

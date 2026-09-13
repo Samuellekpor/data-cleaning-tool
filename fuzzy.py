@@ -28,6 +28,8 @@ class FuzzyGroup:
 class FuzzyScan:
     groups: list[FuzzyGroup] = field(default_factory=list)
     skipped_columns: list[str] = field(default_factory=list)
+    skipped_unique_counts: dict[str, int] = field(default_factory=dict)
+    sampled_columns: dict[str, int] = field(default_factory=dict)
     scanned_columns: list[str] = field(default_factory=list)
 
 
@@ -131,8 +133,10 @@ def scan_fuzzy_duplicates(
     df: pd.DataFrame,
     threshold: float = DEFAULT_THRESHOLD,
     max_unique: int = MAX_UNIQUE,
+    force_columns: set[str] | None = None,
 ) -> FuzzyScan:
     scan = FuzzyScan()
+    force_columns = force_columns or set()
     for col in df.columns:
         series = df[col]
         if not _is_text_column(series):
@@ -140,11 +144,16 @@ def scan_fuzzy_duplicates(
         values = series.dropna().astype(str)
         values = values[values.str.strip().ne("")]
         uniques = values.unique().tolist()
-        if len(uniques) > max_unique:
-            scan.skipped_columns.append(str(col))
+        col_name = str(col)
+        if len(uniques) > max_unique and col_name not in force_columns:
+            scan.skipped_columns.append(col_name)
+            scan.skipped_unique_counts[col_name] = len(uniques)
             continue
-        scan.scanned_columns.append(str(col))
         counts = values.value_counts().to_dict()
+        if len(uniques) > max_unique and col_name in force_columns:
+            uniques = list(values.value_counts().head(max_unique).index)
+            scan.sampled_columns[col_name] = len(counts)
+        scan.scanned_columns.append(col_name)
         for variants in _cluster(uniques, threshold):
             def _rank(v: str) -> tuple:
                 stripped = v.strip()
@@ -159,13 +168,13 @@ def scan_fuzzy_duplicates(
             similarity, reasons = explain_match(variants)
             scan.groups.append(
                 FuzzyGroup(
-                    column=str(col),
+                    column=col_name,
                     variants=sorted(variants, key=lambda v: (-counts.get(v, 0), v)),
                     counts={v: int(counts.get(v, 0)) for v in variants},
                     suggested=suggested,
                     reasons=reasons,
                     similarity=similarity,
-                    group_id=_group_id(str(col), variants),
+                    group_id=_group_id(col_name, variants),
                 )
             )
     return scan
