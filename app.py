@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+from dataclasses import replace
 
 import pandas as pd
 import streamlit as st
@@ -427,13 +428,21 @@ def render_export(
     )
     before = build_quality_report(original)
     after = build_quality_report(cleaned)
+    cert_log = replace(
+        log,
+        rows_before=len(original),
+        rows_after=len(cleaned),
+        cols_before=len(original.columns),
+        cols_after=len(cleaned.columns),
+        steps=list(st.session_state.get("applied_steps") or log.steps),
+    )
     cert = build_certificate(
         source_name=source_name,
         original=original,
         cleaned=cleaned,
         before=before,
         after=after,
-        log=log,
+        log=cert_log,
         remaining_findings=remaining_findings,
     )
     csv_data = cleaned.to_csv(index=False).encode("utf-8")
