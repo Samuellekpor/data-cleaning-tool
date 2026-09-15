@@ -5,6 +5,8 @@ import io
 import pandas as pd
 import streamlit as st
 
+from certificate import build_certificate
+from certificate_pdf import render_certificate_pdf
 from cleaning import CleaningOptions, apply_cleaning, options_from_fix_keys, preview_duplicate_rows
 from findings import collect_findings
 from fuzzy import MAX_UNIQUE, FuzzyGroup, scan_fuzzy_duplicates
@@ -408,19 +410,49 @@ def _excel_bytes(df: pd.DataFrame) -> bytes:
     return buffer.getvalue()
 
 
-def render_export(cleaned: pd.DataFrame, log) -> None:
+def render_export(
+    cleaned: pd.DataFrame,
+    log,
+    original: pd.DataFrame,
+    source_name: str,
+    remaining_findings: int = 0,
+) -> None:
     section_header(
         "06  ·  Deliverable",
         "Export",
-        "The cleaned table, plus a small change log you can keep as proof.",
+        "The cleaned table, plus a certificate: score, every rule, and a sample of what changed.",
+    )
+    before = build_quality_report(original)
+    after = build_quality_report(cleaned)
+    cert = build_certificate(
+        source_name=source_name,
+        original=original,
+        cleaned=cleaned,
+        before=before,
+        after=after,
+        log=log,
+        remaining_findings=remaining_findings,
     )
     csv_data = cleaned.to_csv(index=False).encode("utf-8")
     excel_data = _excel_bytes(cleaned)
-    summary_text = log.as_text()
+    pdf_data = render_certificate_pdf(cert)
+    summary_text = cert.as_text()
     summary_csv = pd.DataFrame(log.as_rows()).to_csv(index=False).encode("utf-8")
+    st.caption(
+        f"Certificate · score {cert.score_before} → {cert.score_after} · "
+        f"{cert.dropped_total:,} dropped row(s) · {cert.changed_total:,} changed cell(s)"
+    )
 
-    c1, c2, c3 = st.columns(3)
+    c1, c2, c3, c4 = st.columns(4)
     with c1:
+        st.download_button(
+            "Certificate (PDF)  ↗",
+            data=pdf_data,
+            file_name="cleaning_certificate.pdf",
+            mime="application/pdf",
+            use_container_width=True,
+        )
+    with c2:
         st.download_button(
             "Download CSV  ↗",
             data=csv_data,
@@ -428,7 +460,7 @@ def render_export(cleaned: pd.DataFrame, log) -> None:
             mime="text/csv",
             use_container_width=True,
         )
-    with c2:
+    with c3:
         st.download_button(
             "Download Excel  ↗",
             data=excel_data,
@@ -436,7 +468,7 @@ def render_export(cleaned: pd.DataFrame, log) -> None:
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             use_container_width=True,
         )
-    with c3:
+    with c4:
         st.download_button(
             "Summary (txt)  ↗",
             data=summary_text,
@@ -579,4 +611,10 @@ log = st.session_state.get("log")
 original = st.session_state.get("original")
 if cleaned is not None and log is not None and original is not None:
     render_before_after(original, cleaned, log)
-    render_export(cleaned, log)
+    render_export(
+        cleaned,
+        log,
+        original,
+        selected,
+        remaining_findings=len(findings),
+    )

@@ -9,7 +9,7 @@ A Streamlit **data-quality inspector**. Upload messy spreadsheets and it diagnos
 - Shows a **0–100 data quality score** (completeness 40%, uniqueness 30%, consistency 30%) *before* you change anything
 - Finds **fuzzy near-duplicates** in text (stdlib `difflib`, skipped on columns with > 5,000 unique values)
 - Cleaning you can review: duplicates, whitespace, dates, casing, emails, phones, currency, missing values, renames, empty rows/columns
-- Before/after view and a downloadable cleaning summary
+- Before/after view and a downloadable **cleaning certificate** (PDF) plus a change-log summary
 
 ## How to run
 
@@ -25,4 +25,4 @@ Open the URL Streamlit prints (usually http://localhost:8501).
 ## Requirements
 
 - Python 3.9+
-- See `requirements.txt` (streamlit, pandas, openpyxl, xlrd)
+- See `requirements.txt` (streamlit, pandas, openpyxl, xlrd, fpdf2)
