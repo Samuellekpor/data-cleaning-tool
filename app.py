@@ -52,6 +52,15 @@ with st.sidebar:
 hero()
 
 
+PREVIEW_ROWS = 200
+
+
+def _show_frame(df: pd.DataFrame) -> None:
+    st.dataframe(df.head(PREVIEW_ROWS), use_container_width=True)
+    if len(df) > PREVIEW_ROWS:
+        st.caption(f"Showing first {PREVIEW_ROWS:,} of {len(df):,} rows.")
+
+
 def _score_caption(score: int) -> str:
     if score >= 85:
         return "Solid — only polish remaining."
@@ -405,14 +414,24 @@ def render_pre_apply_preview(df: pd.DataFrame, options: CleaningOptions) -> None
         )
 
 
+def _receipt_reports(original: pd.DataFrame, cleaned: pd.DataFrame) -> tuple[QualityReport, QualityReport]:
+    sig = (id(original), id(cleaned))
+    if st.session_state.get("_receipt_sig") != sig:
+        st.session_state["_receipt"] = (
+            build_quality_report(original),
+            build_quality_report(cleaned),
+        )
+        st.session_state["_receipt_sig"] = sig
+    return st.session_state["_receipt"]
+
+
 def render_before_after(original: pd.DataFrame, cleaned: pd.DataFrame, log) -> None:
     section_header(
         "05  ·  Receipt",
         "Before vs after",
         "The same score, before the plan and after. This is the screenshot to send.",
     )
-    before = build_quality_report(original)
-    after = build_quality_report(cleaned)
+    before, after = _receipt_reports(original, cleaned)
     delta = after.score - before.score
     sign = f"+{delta}" if delta > 0 else str(delta)
     quality_score_bento(
@@ -441,10 +460,10 @@ def render_before_after(original: pd.DataFrame, cleaned: pd.DataFrame, log) -> N
     before_tab, after_tab = st.tabs(["Before", "After"])
     with before_tab:
         st.caption(f"{len(original):,} rows × {len(original.columns):,} columns")
-        st.dataframe(original, use_container_width=True)
+        _show_frame(original)
     with after_tab:
         st.caption(f"{len(cleaned):,} rows × {len(cleaned.columns):,} columns")
-        st.dataframe(cleaned, use_container_width=True)
+        _show_frame(cleaned)
 
 
 def _excel_bytes(df: pd.DataFrame) -> bytes:
@@ -466,30 +485,48 @@ def render_export(
         "Export",
         "The cleaned table, plus a certificate: score, every rule, and a sample of what changed.",
     )
-    before = build_quality_report(original)
-    after = build_quality_report(cleaned)
-    cert_log = replace(
-        log,
-        rows_before=len(original),
-        rows_after=len(cleaned),
-        cols_before=len(original.columns),
-        cols_after=len(cleaned.columns),
-        steps=list(st.session_state.get("applied_steps") or log.steps),
-    )
-    cert = build_certificate(
-        source_name=source_name,
-        original=original,
-        cleaned=cleaned,
-        before=before,
-        after=after,
-        log=cert_log,
-        remaining_findings=remaining_findings,
-    )
-    csv_data = neutralize_formula_cells(cleaned).to_csv(index=False).encode("utf-8")
-    excel_data = _excel_bytes(neutralize_formula_cells(cleaned))
-    pdf_data = render_certificate_pdf(cert)
-    summary_text = cert.as_text()
-    summary_csv = pd.DataFrame(log.as_rows()).to_csv(index=False).encode("utf-8")
+    before, after = _receipt_reports(original, cleaned)
+    steps = tuple(st.session_state.get("applied_steps") or [])
+    export_sig = (id(cleaned), id(original), remaining_findings, steps, source_name)
+    if st.session_state.get("_export_sig") != export_sig:
+        cert_log = replace(
+            log,
+            rows_before=len(original),
+            rows_after=len(cleaned),
+            cols_before=len(original.columns),
+            cols_after=len(cleaned.columns),
+            steps=list(steps or log.steps),
+        )
+        cert = build_certificate(
+            source_name=source_name,
+            original=original,
+            cleaned=cleaned,
+            before=before,
+            after=after,
+            log=cert_log,
+            remaining_findings=remaining_findings,
+        )
+        safe = neutralize_formula_cells(cleaned)
+        excel_data = _excel_bytes(safe)
+        pdf_data = render_certificate_pdf(cert)
+        st.session_state["_export"] = {
+            "cert": cert,
+            "csv": safe.to_csv(index=False).encode("utf-8"),
+            "excel": excel_data,
+            "pdf": pdf_data,
+            "summary_text": cert.as_text(),
+            "summary_csv": pd.DataFrame(log.as_rows()).to_csv(index=False).encode("utf-8"),
+            "pack": build_handoff_zip(excel_bytes=excel_data, pdf_bytes=pdf_data),
+        }
+        st.session_state["_export_sig"] = export_sig
+    bundle = st.session_state["_export"]
+    cert = bundle["cert"]
+    csv_data = bundle["csv"]
+    excel_data = bundle["excel"]
+    pdf_data = bundle["pdf"]
+    summary_text = bundle["summary_text"]
+    summary_csv = bundle["summary_csv"]
+    pack = bundle["pack"]
     st.caption(
         f"Certificate · score {cert.score_before} → {cert.score_after} · "
         f"{cert.dropped_total:,} dropped row(s) · {cert.changed_total:,} changed cell(s)"
@@ -535,7 +572,6 @@ def render_export(
         mime="text/csv",
         use_container_width=True,
     )
-    pack = build_handoff_zip(excel_bytes=excel_data, pdf_bytes=pdf_data)
     handoff_card(EXCEL_REPORT_AUTOMATOR_URL)
     st.download_button(
         "Handoff pack (Excel + certificate)  ↗",
@@ -619,6 +655,13 @@ if st.session_state.get("file_key") != file_key:
     st.session_state.pop("original", None)
     st.session_state.pop("fuzzy_selected", None)
     st.session_state.pop("fuzzy_skipped_last", None)
+    st.session_state.pop("_diag_sig", None)
+    st.session_state.pop("_fuzzy_scan", None)
+    st.session_state.pop("_quality", None)
+    st.session_state.pop("_export_sig", None)
+    st.session_state.pop("_export", None)
+    st.session_state.pop("_receipt_sig", None)
+    st.session_state.pop("_receipt", None)
     if st.session_state.get("saved_recipe"):
         st.session_state["_offer_last_recipe"] = True
 
@@ -630,7 +673,7 @@ section_header(
     f"Preview — {selected}",
     f"{len(working):,} rows × {len(working.columns):,} columns in the working table.",
 )
-st.dataframe(working, use_container_width=True)
+_show_frame(working)
 
 prefix = str(st.session_state.get("file_key", ""))
 force_columns = {
@@ -638,9 +681,16 @@ force_columns = {
     for col in (st.session_state.get("fuzzy_skipped_last") or [])
     if st.session_state.get(f"fuzzy_force_{prefix}_{col}")
 }
-fuzzy_scan = scan_fuzzy_duplicates(working, force_columns=force_columns)
+diag_sig = (prefix, id(working), frozenset(force_columns))
+if st.session_state.get("_diag_sig") != diag_sig:
+    st.session_state["_fuzzy_scan"] = scan_fuzzy_duplicates(
+        working, force_columns=force_columns
+    )
+    st.session_state["_quality"] = build_quality_report(working)
+    st.session_state["_diag_sig"] = diag_sig
+fuzzy_scan = st.session_state["_fuzzy_scan"]
 st.session_state["fuzzy_skipped_last"] = list(fuzzy_scan.skipped_columns)
-findings = render_quality_report(working, build_quality_report(working), fuzzy_scan)
+findings = render_quality_report(working, st.session_state["_quality"], fuzzy_scan)
 fuzzy_selected = render_fuzzy_scan(fuzzy_scan)
 has_fuzzy = bool(fuzzy_selected)
 
