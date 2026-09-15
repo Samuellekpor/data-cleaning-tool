@@ -263,7 +263,7 @@ def render_recipe_editor(recipe, profile: CleaningProfile) -> tuple[list[str], b
 
 def collect_cleaning_options(df: pd.DataFrame, has_fuzzy: bool) -> CleaningOptions:
     with st.expander("Advanced operations — full toolkit"):
-        st.caption("Use this when a finding has no one-click fix, or you want extra control.")
+        st.caption("Use this for fills, row drops, casing, and renames that are not in the plan.")
         return _collect_cleaning_options_body(df, has_fuzzy)
 
 
