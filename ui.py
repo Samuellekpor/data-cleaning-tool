@@ -571,7 +571,7 @@ def hero() -> None:
           </div>
           <div class="era-hero-aside">
             <strong>What you leave with.</strong><br>
-            A quality score, reviewable cleaning steps, before/after proof,
+            A quality score, a reviewable plan, a cleaning certificate,
             and a cleaned table ready for the Excel Report Automator.
           </div>
         </div>
@@ -589,7 +589,7 @@ def sidebar_chrome() -> None:
           <li><b>01</b><span>Drop .xlsx, .xls, or .csv — several files are fine</span></li>
           <li><b>02</b><span>Read the quality score first. Nothing has been cleaned yet</span></li>
           <li><b>03</b><span>Approve the plan — skip any step you do not want</span></li>
-          <li><b>04</b><span>Apply, compare before/after, then export</span></li>
+          <li><b>04</b><span>Apply, export the certificate, then brief the cleaned table</span></li>
         </ol>
         <p class="era-note">Need a polished briefing from the cleaned table?</p>
         <a class="era-cta" href="{EXCEL_REPORT_AUTOMATOR_URL}">
@@ -730,6 +730,27 @@ def note_cards(notes: list[str]) -> None:
             """
         )
     st.markdown("".join(blocks), unsafe_allow_html=True)
+
+
+def handoff_card(url: str) -> None:
+    st.markdown(
+        f"""
+        <div class="era-shell" style="margin:1.5rem 0 0.85rem">
+          <div class="era-core">
+            <div class="era-kicker">Next · briefing</div>
+            <p class="era-lede" style="margin:0 0 0.95rem">
+              This table is ready to brief. Download the handoff pack, then open
+              Excel Report Automator and upload cleaned_data.xlsx.
+            </p>
+            <a class="era-cta" href="{escape(url)}" target="_blank" rel="noopener">
+              Open Excel Report Automator
+              <span class="era-cta-icon">↗</span>
+            </a>
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
 
 def recipe_banner(line: str) -> None:

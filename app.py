@@ -10,12 +10,15 @@ from certificate_pdf import render_certificate_pdf
 from cleaning import CleaningOptions, apply_cleaning, options_from_fix_keys, preview_duplicate_rows
 from findings import collect_findings
 from fuzzy import MAX_UNIQUE, FuzzyGroup, scan_fuzzy_duplicates
+from handoff import build_handoff_zip
 from io_files import FileReadError, merge_frames, read_uploaded_file
 from quality import QualityReport, build_quality_report
 from recipe import build_recipe, recipe_line
 from ui import (
+    EXCEL_REPORT_AUTOMATOR_URL,
     bento_tiles,
     finding_cards,
+    handoff_card,
     hero,
     inject_theme,
     note_cards,
@@ -482,6 +485,16 @@ def render_export(
         file_name="cleaning_summary.csv",
         mime="text/csv",
         use_container_width=True,
+    )
+    pack = build_handoff_zip(excel_bytes=excel_data, pdf_bytes=pdf_data)
+    handoff_card(EXCEL_REPORT_AUTOMATOR_URL)
+    st.download_button(
+        "Handoff pack (Excel + certificate)  ↗",
+        data=pack,
+        file_name="handoff_for_automator.zip",
+        mime="application/zip",
+        use_container_width=True,
+        help="Upload cleaned_data.xlsx from this zip into Excel Report Automator.",
     )
 
 
