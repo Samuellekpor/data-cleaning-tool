@@ -9,7 +9,7 @@ import streamlit as st
 from certificate import build_certificate
 from certificate_pdf import render_certificate_pdf
 from cleaning import CleaningOptions, apply_cleaning, options_from_fix_keys, preview_duplicate_rows
-from findings import collect_findings
+from findings import Finding, collect_findings
 from fuzzy import MAX_UNIQUE, FuzzyGroup, scan_fuzzy_duplicates
 from handoff import build_handoff_zip
 from io_files import (
@@ -62,7 +62,7 @@ def _score_caption(score: int) -> str:
     return "High risk — do not analyze this as-is."
 
 
-def render_quality_report(df: pd.DataFrame, report: QualityReport, fuzzy_scan) -> None:
+def render_quality_report(df: pd.DataFrame, report: QualityReport, fuzzy_scan) -> list[Finding]:
     section_header(
         "02  ·  Diagnosis",
         "Data quality report",
@@ -682,13 +682,13 @@ with save_r:
         key="recipe_json_upload",
     )
 if recipe_upload is not None:
-    digest = f"{recipe_upload.name}:{recipe_upload.size}"
+    raw = recipe_upload.getvalue()
+    digest = fingerprint_bytes(raw)
     if st.session_state.get("_recipe_upload_digest") != digest:
         try:
-            loaded = recipe_from_json(recipe_upload.getvalue())
+            loaded = recipe_from_json(raw)
         except (ValueError, UnicodeDecodeError) as exc:
             st.error(f"Could not read that recipe. {exc}")
-            st.session_state["_recipe_upload_digest"] = digest
         else:
             apply_saved_recipe(loaded)
             st.session_state["saved_recipe"] = loaded
