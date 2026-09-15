@@ -133,14 +133,21 @@ def changed_cell_sample(
     original: pd.DataFrame,
     cleaned: pd.DataFrame,
     n: int = CHANGED_SAMPLE,
+    rename_map: dict[str, str] | None = None,
 ) -> tuple[int, list[CellChange]]:
-    common_idx = original.index.intersection(cleaned.index)
-    common_cols = [c for c in original.columns if c in cleaned.columns]
+    """Compare original vs cleaned. Renamed columns are aligned by the old name."""
+    right = cleaned
+    if rename_map:
+        reverse = {new: old for old, new in rename_map.items() if new in cleaned.columns}
+        if reverse:
+            right = cleaned.rename(columns=reverse)
+    common_idx = original.index.intersection(right.index)
+    common_cols = [c for c in original.columns if c in right.columns]
     if len(common_idx) == 0 or not common_cols:
         return 0, []
     left = original.loc[common_idx, common_cols].apply(lambda col: col.map(_cell))
-    right = cleaned.loc[common_idx, common_cols].apply(lambda col: col.map(_cell))
-    mask = left.ne(right)
+    right_text = right.loc[common_idx, common_cols].apply(lambda col: col.map(_cell))
+    mask = left.ne(right_text)
     total = int(mask.to_numpy().sum())
     if total == 0:
         return 0, []
@@ -148,12 +155,15 @@ def changed_cell_sample(
     hits = hits[hits]
     sample: list[CellChange] = []
     for (idx, col) in hits.head(n).index:
+        shown = str(col)
+        if rename_map and col in rename_map:
+            shown = f"{col} → {rename_map[col]}"
         sample.append(
             CellChange(
                 row=str(idx),
-                column=str(col),
+                column=shown,
                 before=str(left.at[idx, col]),
-                after=str(right.at[idx, col]),
+                after=str(right_text.at[idx, col]),
             )
         )
     return total, sample
@@ -172,7 +182,9 @@ def build_certificate(
     dropped_total, dropped_sample, dropped_columns = dropped_row_sample(
         original, cleaned
     )
-    changed_total, changed_sample = changed_cell_sample(original, cleaned)
+    changed_total, changed_sample = changed_cell_sample(
+        original, cleaned, rename_map=log.columns_renamed
+    )
     return CleaningCertificate(
         source_name=source_name or "uploaded table",
         generated_at=datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
