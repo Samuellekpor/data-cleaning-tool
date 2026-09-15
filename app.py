@@ -12,7 +12,7 @@ from cleaning import CleaningOptions, apply_cleaning, options_from_fix_keys, pre
 from findings import collect_findings
 from fuzzy import MAX_UNIQUE, FuzzyGroup, scan_fuzzy_duplicates
 from handoff import build_handoff_zip
-from io_files import FileReadError, merge_frames, read_uploaded_file
+from io_files import FileReadError, fingerprint_bytes, merge_frames, read_uploaded_file
 from profiles import CleaningProfile, PROFILES, PROFILE_BY_ID, get_profile
 from quality import QualityReport, build_quality_report
 from recipe import STEP_ORDER, build_recipe, recipe_line
@@ -560,10 +560,12 @@ if not uploads:
     st.stop()
 
 frames: dict[str, pd.DataFrame] = {}
+fingerprints: dict[str, str] = {}
 errors: list[str] = []
 
 for uploaded in uploads:
     try:
+        fingerprints[uploaded.name] = fingerprint_bytes(uploaded.getvalue())
         frames[uploaded.name] = read_uploaded_file(uploaded)
     except FileReadError as exc:
         errors.append(str(exc))
@@ -595,10 +597,12 @@ if len(frames) > 1:
 if merge:
     df, _headers_differ = merge_frames(frames)
     selected = "(merged)"
+    content_fp = fingerprint_bytes("|".join(fingerprints[n] for n in names).encode())
 else:
     selected = names[0] if len(names) == 1 else st.selectbox("Working file", names)
     df = frames[selected]
-file_key = f"{selected}:{len(df)}:{tuple(df.columns)}"
+    content_fp = fingerprints[selected]
+file_key = f"{selected}:{len(df)}:{tuple(map(str, df.columns))}:{content_fp}"
 if st.session_state.get("file_key") != file_key:
     st.session_state["file_key"] = file_key
     st.session_state["source"] = df.copy()

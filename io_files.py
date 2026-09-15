@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from typing import BinaryIO
 
 import pandas as pd
@@ -11,6 +12,11 @@ SUPPORTED_SUFFIXES = (".xlsx", ".xls", ".csv")
 
 class FileReadError(Exception):
     """Raised when an upload cannot be parsed as a table."""
+
+
+def fingerprint_bytes(data: bytes) -> str:
+    """Short content hash so a same-shaped replacement file still resets session."""
+    return hashlib.sha256(data).hexdigest()[:16]
 
 
 def _read_csv(file: BinaryIO) -> pd.DataFrame:
