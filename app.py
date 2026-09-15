@@ -13,9 +13,10 @@ from findings import collect_findings
 from fuzzy import MAX_UNIQUE, FuzzyGroup, scan_fuzzy_duplicates
 from handoff import build_handoff_zip
 from io_files import FileReadError, merge_frames, read_uploaded_file
-from profiles import CleaningProfile, PROFILES, get_profile
+from profiles import CleaningProfile, PROFILES, PROFILE_BY_ID, get_profile
 from quality import QualityReport, build_quality_report
-from recipe import build_recipe, recipe_line
+from recipe import STEP_ORDER, build_recipe, recipe_line
+from recipe_io import recipe_from_json, recipe_payload, recipe_to_json
 from ui import (
     EXCEL_REPORT_AUTOMATOR_URL,
     bento_tiles,
@@ -195,6 +196,16 @@ def _commit_clean(original: pd.DataFrame, cleaned: pd.DataFrame, log) -> None:
     steps = list(st.session_state.get("applied_steps") or [])
     steps.extend(log.steps)
     st.session_state["applied_steps"] = steps
+
+
+def apply_saved_recipe(saved: dict) -> None:
+    profile_id = saved.get("profile") if saved.get("profile") in PROFILE_BY_ID else "findings"
+    st.session_state["cleaning_profile"] = profile_id
+    st.session_state["_profile_token"] = f"{st.session_state.get('file_key')}:{profile_id}"
+    wanted = set(saved.get("fix_keys") or [])
+    for key in STEP_ORDER:
+        st.session_state[f"recipe_{key}"] = key in wanted
+    st.session_state["recipe_dayfirst"] = bool(saved.get("dayfirst"))
 
 
 def render_profile_picker() -> CleaningProfile:
@@ -598,6 +609,8 @@ if st.session_state.get("file_key") != file_key:
     st.session_state.pop("original", None)
     st.session_state.pop("fuzzy_selected", None)
     st.session_state.pop("fuzzy_skipped_last", None)
+    if st.session_state.get("saved_recipe"):
+        st.session_state["_offer_last_recipe"] = True
 
 source = st.session_state.get("source", df)
 working = st.session_state.get("working", df)
@@ -628,7 +641,49 @@ section_header(
 )
 profile = render_profile_picker()
 recipe = build_recipe(findings, force_keys=profile.fix_keys)
+saved = st.session_state.get("saved_recipe")
+if st.session_state.get("_offer_last_recipe") and saved:
+    last_line = recipe_line(recipe, saved.get("fix_keys") or [])
+    offer_l, offer_r = st.columns([0.72, 0.28])
+    with offer_l:
+        st.info(f"Last recipe from the previous file: {last_line}")
+    with offer_r:
+        if st.button("Re-run last recipe", use_container_width=True):
+            apply_saved_recipe(saved)
+            st.session_state["_offer_last_recipe"] = False
+            st.rerun()
 included_keys, recipe_dayfirst = render_recipe_editor(recipe, profile)
+
+save_l, save_r = st.columns(2)
+with save_l:
+    st.download_button(
+        "Save this recipe  ↗",
+        data=recipe_to_json(profile.id, included_keys, recipe_dayfirst),
+        file_name="cleaning_recipe.json",
+        mime="application/json",
+        disabled=not included_keys,
+        use_container_width=True,
+        help="Reload this JSON on next month’s file to seed the same plan.",
+    )
+with save_r:
+    recipe_upload = st.file_uploader(
+        "Load a saved recipe (JSON)",
+        type=["json"],
+        key="recipe_json_upload",
+    )
+if recipe_upload is not None:
+    digest = f"{recipe_upload.name}:{recipe_upload.size}"
+    if st.session_state.get("_recipe_upload_digest") != digest:
+        try:
+            loaded = recipe_from_json(recipe_upload.getvalue())
+        except (ValueError, UnicodeDecodeError) as exc:
+            st.error(f"Could not read that recipe. {exc}")
+            st.session_state["_recipe_upload_digest"] = digest
+        else:
+            apply_saved_recipe(loaded)
+            st.session_state["saved_recipe"] = loaded
+            st.session_state["_recipe_upload_digest"] = digest
+            st.rerun()
 
 if st.button("Accept plan", type="primary", disabled=not included_keys):
     plan = options_from_fix_keys(
@@ -638,6 +693,10 @@ if st.button("Accept plan", type="primary", disabled=not included_keys):
     )
     cleaned, log = apply_cleaning(source, plan)
     _commit_clean(source, cleaned, log)
+    st.session_state["saved_recipe"] = recipe_payload(
+        profile.id, included_keys, recipe_dayfirst
+    )
+    st.session_state["_offer_last_recipe"] = False
     st.success("Plan applied from the original file. Review the score change below.")
     st.rerun()
 
