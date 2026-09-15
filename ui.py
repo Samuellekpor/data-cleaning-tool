@@ -6,6 +6,14 @@ import streamlit as st
 
 EXCEL_REPORT_AUTOMATOR_URL = "https://github.com/Samuellekpor/excel-report-automator"
 
+_SEV_TOKENS = frozenset({"high", "medium", "low"})
+_PILLAR_TOKENS = frozenset({"completeness", "uniqueness", "consistency"})
+
+
+def _css_token(value: str | None, allowed: frozenset[str], fallback: str) -> str:
+    token = (value or "").strip().lower()
+    return token if token in allowed else fallback
+
 FONTS = """
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -664,7 +672,7 @@ def quality_score_bento(
           <div class="era-tile-xl">
             <div class="era-shell">
               <div class="era-core">
-                <div class="era-kicker">{kicker}</div>
+                <div class="era-kicker">{escape(kicker)}</div>
                 <div class="era-value-xl">{big}</div>
                 <p class="era-note" style="margin:0.85rem 0 0">{escape(caption)}</p>
                 <div class="era-track"><div class="era-fill" style="width:{width}%"></div></div>
@@ -796,7 +804,9 @@ def finding_cards(findings) -> None:
         return
     blocks = []
     for i, finding in enumerate(findings, start=1):
-        delay = min(i * 70, 480)
+        delay = int(min(i * 70, 480))
+        sev = _css_token(finding.severity, _SEV_TOKENS, "low")
+        pillar = _css_token(finding.pillar, _PILLAR_TOKENS, "completeness")
         samples = ""
         if finding.samples:
             shown = " · ".join(escape(str(s)) for s in finding.samples[:4])
@@ -818,7 +828,7 @@ def finding_cards(findings) -> None:
                 <div class="era-index">{i:02d}</div>
                 <div>
                   <div class="era-finding-meta">
-                    <span class="era-sev era-sev-{escape(finding.severity)}">{escape(finding.severity)}</span>
+                    <span class="era-sev era-sev-{sev}">{escape(finding.severity)}</span>
                     <span class="era-kicker" style="margin:0">{escape(finding.pillar)}</span>
                     {column}
                   </div>
