@@ -12,7 +12,13 @@ from cleaning import CleaningOptions, apply_cleaning, options_from_fix_keys, pre
 from findings import collect_findings
 from fuzzy import MAX_UNIQUE, FuzzyGroup, scan_fuzzy_duplicates
 from handoff import build_handoff_zip
-from io_files import FileReadError, fingerprint_bytes, merge_frames, read_uploaded_file
+from io_files import (
+    FileReadError,
+    fingerprint_bytes,
+    merge_frames,
+    neutralize_formula_cells,
+    read_uploaded_file,
+)
 from profiles import CleaningProfile, PROFILES, PROFILE_BY_ID, get_profile
 from quality import QualityReport, build_quality_report
 from recipe import STEP_ORDER, build_recipe, recipe_line
@@ -479,8 +485,8 @@ def render_export(
         log=cert_log,
         remaining_findings=remaining_findings,
     )
-    csv_data = cleaned.to_csv(index=False).encode("utf-8")
-    excel_data = _excel_bytes(cleaned)
+    csv_data = neutralize_formula_cells(cleaned).to_csv(index=False).encode("utf-8")
+    excel_data = _excel_bytes(neutralize_formula_cells(cleaned))
     pdf_data = render_certificate_pdf(cert)
     summary_text = cert.as_text()
     summary_csv = pd.DataFrame(log.as_rows()).to_csv(index=False).encode("utf-8")

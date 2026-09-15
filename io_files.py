@@ -75,3 +75,26 @@ def merge_frames(frames: dict[str, pd.DataFrame]) -> tuple[pd.DataFrame, bool]:
         pieces.append(piece)
     merged = pd.concat(pieces, ignore_index=True, sort=False)
     return merged, headers_differ
+
+
+_FORMULA_PREFIXES = frozenset("=+-@\t\r")
+
+
+def _neutralize_cell(value):
+    if not isinstance(value, str) or not value:
+        return value
+    if value[0] in _FORMULA_PREFIXES:
+        return "'" + value
+    return value
+
+
+def neutralize_formula_cells(df: pd.DataFrame) -> pd.DataFrame:
+    """Stop Excel/Sheets from treating exported text as formulas."""
+    out = df.copy()
+    for col in out.columns:
+        if pd.api.types.is_numeric_dtype(out[col]) or pd.api.types.is_datetime64_any_dtype(
+            out[col]
+        ):
+            continue
+        out[col] = out[col].map(_neutralize_cell)
+    return out
