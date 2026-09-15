@@ -11,6 +11,7 @@ import pandas as pd
 
 DEFAULT_THRESHOLD = 0.85
 MAX_UNIQUE = 5000
+MAX_BLOCK = 400
 
 
 @dataclass
@@ -118,6 +119,8 @@ def _cluster(uniques: list[str], threshold: float) -> list[list[str]]:
         blocks[key].append(n)
 
     for members in blocks.values():
+        if len(members) > MAX_BLOCK:
+            members = members[:MAX_BLOCK]
         for i, a in enumerate(members):
             for b in members[i + 1 :]:
                 if _similar(a, b, threshold):
