@@ -9,6 +9,7 @@ A Streamlit **data-quality inspector**. Upload messy spreadsheets and it diagnos
 - Shows a **0–100 data quality score** (completeness 40%, uniqueness 30%, consistency 30%) *before* you change anything
 - Finds **fuzzy near-duplicates** in text (stdlib `difflib`, skipped on columns with > 5,000 unique values)
 - Cleaning you can review: duplicates, whitespace, dates, casing, emails, phones, currency, missing values, renames, empty rows/columns
+- Named plans for **CRM contacts**, **transactions**, and **surveys**, or a plan built from the findings
 - Before/after view and a downloadable **cleaning certificate** (PDF) plus a change-log summary
 - One-click **handoff pack** (cleaned Excel + certificate) for [Excel Report Automator](https://github.com/Samuellekpor/excel-report-automator)
 

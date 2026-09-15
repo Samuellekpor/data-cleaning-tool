@@ -47,29 +47,43 @@ def _include_by_default(severity: str) -> bool:
     return severity in {"high", "medium"}
 
 
-def build_recipe(findings: list[Finding]) -> list[RecipeStep]:
+def build_recipe(
+    findings: list[Finding],
+    *,
+    force_keys: tuple[str, ...] | list[str] | None = None,
+) -> list[RecipeStep]:
     """One step per fix_key, ordered like the cleaner, not like the finding list."""
     buckets: dict[str, list[Finding]] = {key: [] for key in STEP_ORDER}
     for finding in findings:
         if finding.fix_key in buckets:
             buckets[finding.fix_key].append(finding)
 
+    forced = set(force_keys) if force_keys is not None else None
     steps: list[RecipeStep] = []
     for key in STEP_ORDER:
         group = buckets[key]
-        if not group:
+        if not group and (forced is None or key not in forced):
             continue
-        highest = min(group, key=lambda f: SEVERITY_ORDER.get(f.severity, 9)).severity
-        columns = sorted({f.column for f in group if f.column})
-        titles = [f.title for f in group[:3]]
-        if len(group) > 3:
-            titles.append(f"+{len(group) - 3} more")
-        default = _include_by_default(highest) or key == "trim_whitespace"
+        if group:
+            highest = min(group, key=lambda f: SEVERITY_ORDER.get(f.severity, 9)).severity
+            columns = sorted({f.column for f in group if f.column})
+            titles = [f.title for f in group[:3]]
+            if len(group) > 3:
+                titles.append(f"+{len(group) - 3} more")
+            summary = " · ".join(titles)
+            default = _include_by_default(highest) or key == "trim_whitespace"
+        else:
+            highest = "low"
+            columns = []
+            summary = "Included by the selected profile — no finding required."
+            default = True
+        if forced is not None:
+            default = key in forced
         steps.append(
             RecipeStep(
                 fix_key=key,
                 label=STEP_LABELS[key],
-                summary=" · ".join(titles),
+                summary=summary,
                 finding_ids=[f.id for f in group],
                 columns=columns,
                 default_include=default,

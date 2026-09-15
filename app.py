@@ -13,6 +13,7 @@ from findings import collect_findings
 from fuzzy import MAX_UNIQUE, FuzzyGroup, scan_fuzzy_duplicates
 from handoff import build_handoff_zip
 from io_files import FileReadError, merge_frames, read_uploaded_file
+from profiles import CleaningProfile, PROFILES, get_profile
 from quality import QualityReport, build_quality_report
 from recipe import build_recipe, recipe_line
 from ui import (
@@ -196,8 +197,30 @@ def _commit_clean(original: pd.DataFrame, cleaned: pd.DataFrame, log) -> None:
     st.session_state["applied_steps"] = steps
 
 
-def render_recipe_editor(recipe) -> tuple[list[str], bool]:
+def render_profile_picker() -> CleaningProfile:
+    profile_id = st.radio(
+        "Starting plan",
+        [p.id for p in PROFILES],
+        format_func=lambda i: get_profile(i).label,
+        horizontal=True,
+        key="cleaning_profile",
+        help="A profile seeds the checkboxes. Skip any step you do not want.",
+    )
+    profile = get_profile(profile_id)
+    st.caption(profile.summary)
+    return profile
+
+
+def render_recipe_editor(recipe, profile: CleaningProfile) -> tuple[list[str], bool]:
     """Let the user accept, skip, or tweak the proposed plan. Does not apply yet."""
+    token = f"{st.session_state.get('file_key')}:{profile.id}"
+    if st.session_state.get("_profile_token") != token:
+        st.session_state["_profile_token"] = token
+        wanted = {s.fix_key for s in recipe if s.default_include}
+        for step in recipe:
+            st.session_state[f"recipe_{step.fix_key}"] = step.fix_key in wanted
+        st.session_state["recipe_dayfirst"] = bool(profile.dayfirst)
+
     included: list[str] = []
     for step in recipe:
         cols = st.columns([0.12, 0.88])
@@ -601,10 +624,11 @@ has_fuzzy = bool(fuzzy_selected)
 section_header(
     "04  ·  Plan",
     "Approve the repair plan",
-    "Accept the proposed sequence, skip any step, then apply. The toolkit stays in Advanced.",
+    "Start from findings or a named profile, skip any step, then apply.",
 )
-recipe = build_recipe(findings)
-included_keys, recipe_dayfirst = render_recipe_editor(recipe)
+profile = render_profile_picker()
+recipe = build_recipe(findings, force_keys=profile.fix_keys)
+included_keys, recipe_dayfirst = render_recipe_editor(recipe, profile)
 
 if st.button("Accept plan", type="primary", disabled=not included_keys):
     plan = options_from_fix_keys(
