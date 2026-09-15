@@ -105,7 +105,7 @@ def render_fuzzy_scan(scan) -> list[FuzzyGroup]:
     if scan.skipped_columns:
         st.warning(
             "These columns were not scanned — too many unique values for a full pass. "
-            "Turn on Scan anyway if you need them; it can take a while."
+            f"Scan anyway uses the {MAX_UNIQUE:,} most common values, not every spelling."
         )
         prefix = str(st.session_state.get("file_key", ""))
         for col in scan.skipped_columns:
