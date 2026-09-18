@@ -10,7 +10,7 @@ from certificate import build_certificate
 from certificate_pdf import render_certificate_pdf
 from cleaning import CleaningOptions, preview_duplicate_rows
 from findings import Finding, collect_findings
-from fuzzy import MAX_UNIQUE, FuzzyGroup
+from fuzzy import MAX_BLOCK, MAX_UNIQUE, FuzzyGroup
 from handoff import build_handoff_zip
 from io_files import neutralize_formula_cells
 from profiles import CleaningProfile, PROFILES, get_profile
@@ -116,6 +116,15 @@ def render_fuzzy_scan(scan) -> list[FuzzyGroup]:
             for col, n in scan.sampled_columns.items()
         ]
         st.caption("Checked the most common values only: " + "; ".join(bits))
+    if scan.truncated_blocks:
+        bits = [
+            f"{col} ({n:,} similar-looking values not compared)"
+            for col, n in scan.truncated_blocks.items()
+        ]
+        st.caption(
+            f"Some two-letter groups were larger than {MAX_BLOCK:,}. "
+            "Those extra spellings were skipped: " + "; ".join(bits)
+        )
     if not scan.scanned_columns:
         st.info("No text columns were small enough to scan for similar spellings.")
         st.session_state["fuzzy_selected"] = []

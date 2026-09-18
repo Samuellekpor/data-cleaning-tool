@@ -31,6 +31,7 @@ class FuzzyScan:
     skipped_columns: list[str] = field(default_factory=list)
     skipped_unique_counts: dict[str, int] = field(default_factory=dict)
     sampled_columns: dict[str, int] = field(default_factory=dict)
+    truncated_blocks: dict[str, int] = field(default_factory=dict)
     scanned_columns: list[str] = field(default_factory=list)
 
 
@@ -93,7 +94,7 @@ def _group_id(column: str, variants: list[str]) -> str:
     return hashlib.sha1(blob.encode("utf-8")).hexdigest()[:12]
 
 
-def _cluster(uniques: list[str], threshold: float) -> list[list[str]]:
+def _cluster(uniques: list[str], threshold: float) -> tuple[list[list[str]], int]:
     """Union-find on normalized similarity; keep original spellings in each cluster."""
     by_norm: dict[str, list[str]] = defaultdict(list)
     for val in uniques:
@@ -118,8 +119,10 @@ def _cluster(uniques: list[str], threshold: float) -> list[list[str]]:
         key = n[:2] if n else ""
         blocks[key].append(n)
 
+    truncated = 0
     for members in blocks.values():
         if len(members) > MAX_BLOCK:
+            truncated += len(members) - MAX_BLOCK
             members = members[:MAX_BLOCK]
         for i, a in enumerate(members):
             for b in members[i + 1 :]:
@@ -129,7 +132,7 @@ def _cluster(uniques: list[str], threshold: float) -> list[list[str]]:
     clusters: dict[str, list[str]] = defaultdict(list)
     for n in norms:
         clusters[find(n)].extend(by_norm[n])
-    return [vals for vals in clusters.values() if len(vals) > 1]
+    return [vals for vals in clusters.values() if len(vals) > 1], truncated
 
 
 def scan_fuzzy_duplicates(
@@ -157,7 +160,10 @@ def scan_fuzzy_duplicates(
             uniques = list(values.value_counts().head(max_unique).index)
             scan.sampled_columns[col_name] = len(counts)
         scan.scanned_columns.append(col_name)
-        for variants in _cluster(uniques, threshold):
+        clusters, leftover = _cluster(uniques, threshold)
+        if leftover:
+            scan.truncated_blocks[col_name] = leftover
+        for variants in clusters:
             def _rank(v: str) -> tuple:
                 stripped = v.strip()
                 return (
