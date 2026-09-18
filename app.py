@@ -60,9 +60,9 @@ def apply_saved_recipe(saved: dict) -> None:
 
 
 section_header(
-    "01  ·  Intake",
-    "Upload your data",
-    "CSV or Excel. Several files can be stacked into one table.",
+    "01  ·  Upload",
+    "Add your spreadsheet",
+    "CSV or Excel. Several files can be stacked if they are the same kind of table.",
 )
 
 uploads = st.file_uploader(
@@ -74,7 +74,7 @@ uploads = st.file_uploader(
 )
 
 if not uploads:
-    st.info("Start by dropping a spreadsheet. The quality score appears before anything is cleaned.")
+    st.info("Drop a spreadsheet to begin. We score it before anything is cleaned.")
     st.stop()
 
 frames: dict[str, pd.DataFrame] = {}
@@ -92,21 +92,21 @@ for message in errors:
     st.error(message)
 
 if not frames:
-    st.warning("No readable files yet. Fix the errors above or try another file.")
+    st.warning("Nothing readable yet. Fix the errors above, or try another file.")
     st.stop()
 
 names = list(frames.keys())
 merge = False
 if len(frames) > 1:
     merge = st.checkbox(
-        "Merge files (stack rows into one table)",
-        help="Use this when each file is the same kind of table.",
+        "Combine files into one table",
+        help="Use this when each file is the same kind of table, stacked as extra rows.",
     )
     header_sets = [tuple(map(str, f.columns)) for f in frames.values()]
     if merge and len(set(header_sets)) > 1:
         st.warning(
-            "Column headers differ between files. The merge will line up "
-            "matching names and leave blanks where a file is missing a column."
+            "Column names differ between files. Matching names line up; "
+            "a blank is left where a file is missing a column."
         )
         with st.expander("Headers in each file"):
             for name, cols in zip(frames.keys(), header_sets):
@@ -117,7 +117,7 @@ if merge:
     selected = "(merged)"
     content_fp = fingerprint_bytes("|".join(fingerprints[n] for n in names).encode())
 else:
-    selected = names[0] if len(names) == 1 else st.selectbox("Working file", names)
+    selected = names[0] if len(names) == 1 else st.selectbox("File to inspect", names)
     df = frames[selected]
     content_fp = fingerprints[selected]
 file_key = f"{selected}:{len(df)}:{tuple(map(str, df.columns))}:{content_fp}"
@@ -145,9 +145,9 @@ source = st.session_state.get("source", df)
 working = st.session_state.get("working", df)
 
 section_header(
-    "Receipt",
-    f"Preview — {selected}",
-    f"{len(working):,} rows × {len(working.columns):,} columns in the working table.",
+    "Table",
+    selected,
+    f"{len(working):,} rows × {len(working.columns):,} columns. This is the current working copy.",
 )
 show_frame(working)
 
@@ -172,8 +172,8 @@ has_fuzzy = bool(fuzzy_selected)
 
 section_header(
     "04  ·  Plan",
-    "Approve the repair plan",
-    "Start from findings or a named profile, skip any step, then apply.",
+    "Choose what to fix",
+    "Start from the findings or a named profile. Turn off any step you do not want, then apply.",
 )
 profile = render_profile_picker()
 recipe = build_recipe(findings, force_keys=profile.fix_keys)
@@ -182,9 +182,9 @@ if st.session_state.get("_offer_last_recipe") and saved:
     last_line = recipe_line(recipe, saved.get("fix_keys") or [])
     offer_l, offer_r = st.columns([0.72, 0.28])
     with offer_l:
-        st.info(f"Last recipe from the previous file: {last_line}")
+        st.info(f"Last plan, from the previous file: {last_line}")
     with offer_r:
-        if st.button("Re-run last recipe", use_container_width=True):
+        if st.button("Use last plan", use_container_width=True):
             apply_saved_recipe(saved)
             st.session_state["_offer_last_recipe"] = False
             st.rerun()
@@ -193,17 +193,17 @@ included_keys, recipe_dayfirst = render_recipe_editor(recipe, profile)
 save_l, save_r = st.columns(2)
 with save_l:
     st.download_button(
-        "Save this recipe  ↗",
+        "Save this plan  ↗",
         data=recipe_to_json(profile.id, included_keys, recipe_dayfirst),
         file_name="cleaning_recipe.json",
         mime="application/json",
         disabled=not included_keys,
         use_container_width=True,
-        help="Reload this JSON on next month’s file to seed the same plan.",
+        help="Open this JSON on next month’s file to tick the same steps.",
     )
 with save_r:
     recipe_upload = st.file_uploader(
-        "Load a saved recipe (JSON)",
+        "Or load a saved plan (JSON)",
         type=["json"],
         key="recipe_json_upload",
     )
@@ -214,14 +214,14 @@ if recipe_upload is not None:
         try:
             loaded = recipe_from_json(raw)
         except (ValueError, UnicodeDecodeError) as exc:
-            st.error(f"Could not read that recipe. {exc}")
+            st.error(f"Could not read that plan file. {exc}")
         else:
             apply_saved_recipe(loaded)
             st.session_state["saved_recipe"] = loaded
             st.session_state["_recipe_upload_digest"] = digest
             st.rerun()
 
-if st.button("Accept plan", type="primary", disabled=not included_keys):
+if st.button("Apply this plan", type="primary", disabled=not included_keys):
     plan = options_from_fix_keys(
         included_keys,
         dayfirst=recipe_dayfirst,
@@ -233,18 +233,18 @@ if st.button("Accept plan", type="primary", disabled=not included_keys):
         profile.id, included_keys, recipe_dayfirst
     )
     st.session_state["_offer_last_recipe"] = False
-    st.success("Plan applied from the original file. Review the score change below.")
+    st.success("Plan applied from the original file. Check the score change below.")
     st.rerun()
 
 options = collect_cleaning_options(working, has_fuzzy)
 render_pre_apply_preview(working, options)
 
-if st.button("Apply advanced cleaning"):
+if st.button("Apply advanced tools"):
     if options.collapse_fuzzy and options.fuzzy_groups is None:
         options.fuzzy_groups = st.session_state.get("fuzzy_selected")
     cleaned, log = apply_cleaning(working, options)
     _commit_clean(source, cleaned, log)
-    st.success("Advanced cleaning applied. Review the before/after below.")
+    st.success("Advanced tools applied. Check before and after below.")
     st.rerun()
 
 cleaned = st.session_state.get("cleaned")

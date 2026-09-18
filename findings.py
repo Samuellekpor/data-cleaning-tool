@@ -69,11 +69,11 @@ def collect_findings(
                 id="exact-duplicates",
                 severity=_severity_for_share(report.exact_duplicate_rows, n_rows, high=0.05, medium=0.01),
                 pillar="uniqueness",
-                title=f"{report.exact_duplicate_rows:,} exact duplicate row(s)",
-                detail="Full-row copies. These inflate counts and bias any later briefing.",
+                title=f"{report.exact_duplicate_rows:,} duplicate row{'s' if report.exact_duplicate_rows != 1 else ''}",
+                detail="The same row appears more than once. That can inflate counts later.",
                 count=report.exact_duplicate_rows,
                 samples=_sample_strings(dupes.astype(str).agg(" · ".join, axis=1), 3),
-                recommended_fix="Drop extra copies, keep the first row",
+                recommended_fix="Keep the first copy of each duplicate row",
                 fix_key="drop_exact_duplicates",
             )
         )
@@ -87,7 +87,7 @@ def collect_findings(
                     severity="high",
                     pillar="completeness",
                     title=f"Column “{col.name}” is completely empty",
-                    detail="It adds no information and will drag completeness to zero for this field.",
+                    detail="This column has no values. Removing it will not lose any rows.",
                     column=col.name,
                     count=col.missing_count,
                     recommended_fix="Remove empty columns",
@@ -100,11 +100,11 @@ def collect_findings(
                     id=f"missing:{col.name}",
                     severity=_severity_for_share(col.missing_count, n_rows, high=0.4, medium=0.1),
                     pillar="completeness",
-                    title=f"{col.missing_pct:.1f}% missing in “{col.name}”",
-                    detail=f"{col.missing_count:,} empty cell(s). Filling or dropping is a choice — preview first.",
+                    title=f"{col.missing_pct:.1f}% empty in “{col.name}”",
+                    detail=f"{col.missing_count:,} empty cell{'s' if col.missing_count != 1 else ''}. Filling or dropping is a choice — preview first.",
                     column=col.name,
                     count=col.missing_count,
-                    recommended_fix="Open advanced cleaning to fill or drop missing values",
+                    recommended_fix="Open Advanced to fill empty cells or drop rows",
                     fix_key=None,
                 )
             )
@@ -116,12 +116,12 @@ def collect_findings(
                     id=f"placeholders:{col.name}",
                     severity="low",
                     pillar="completeness",
-                    title=f"{col.empty_string_count:,} placeholder value(s) in “{col.name}”",
-                    detail="Blank strings, NaN, None, or NULL written as text instead of true missing values.",
+                    title=f"{col.empty_string_count:,} placeholder{'s' if col.empty_string_count != 1 else ''} in “{col.name}”",
+                    detail="Words like NULL, NaN, or blank text instead of a truly empty cell.",
                     column=col.name,
                     count=col.empty_string_count,
                     samples=_sample_strings(series[mask], 5),
-                    recommended_fix="Trim whitespace (placeholders often collapse after strip)",
+                    recommended_fix="Trim extra spaces (placeholders often become empty)",
                     fix_key="trim_whitespace",
                 )
             )
@@ -136,7 +136,7 @@ def collect_findings(
                     column=col.name,
                     count=len(col.date_formats),
                     samples=col.date_formats,
-                    recommended_fix="Parse date-like columns to datetime",
+                    recommended_fix="Turn this column into real dates",
                     fix_key="fix_dates",
                 )
             )
@@ -149,11 +149,11 @@ def collect_findings(
                     severity=_severity_for_share(col.invalid_email_count, n_rows, high=0.1, medium=0.02),
                     pillar="consistency",
                     title=f"{col.invalid_email_count:,} invalid email(s) in “{col.name}”",
-                    detail="Values that do not look like name@domain.tld. Trimming and lowercasing fixes the easy ones.",
+                    detail="These do not look like name@domain. Trim and lowercase often fixes the easy ones.",
                     column=col.name,
                     count=col.invalid_email_count,
                     samples=_sample_strings(bad, 5),
-                    recommended_fix="Trim and lowercase email-like columns",
+                    recommended_fix="Trim and lowercase email columns",
                     fix_key="fix_emails",
                 )
             )
@@ -167,11 +167,11 @@ def collect_findings(
                     severity=_severity_for_share(col.invalid_phone_count, n_rows, high=0.1, medium=0.02),
                     pillar="consistency",
                     title=f"{col.invalid_phone_count:,} invalid phone(s) in “{col.name}”",
-                    detail="After stripping punctuation, these are shorter than 7 or longer than 15 digits.",
+                    detail="After removing punctuation, these have fewer than 7 or more than 15 digits.",
                     column=col.name,
                     count=col.invalid_phone_count,
                     samples=_sample_strings(bad, 5),
-                    recommended_fix="Normalize phones to digits",
+                    recommended_fix="Standardize phones to digits",
                     fix_key="normalize_phones",
                 )
             )
@@ -185,12 +185,12 @@ def collect_findings(
                         id=f"whitespace:{col.name}",
                         severity="low",
                         pillar="consistency",
-                        title=f"Leading/trailing spaces in “{col.name}”",
-                        detail=f"{len(padded):,} value(s) would change if trimmed — a common false duplicate.",
+                        title=f"Extra spaces in “{col.name}”",
+                        detail=f"{len(padded):,} value{'s' if len(padded) != 1 else ''} would change if trimmed — a common false duplicate.",
                         column=col.name,
                         count=int(len(padded)),
                         samples=_sample_strings(padded.map(lambda v: repr(v)), 4),
-                        recommended_fix="Trim whitespace on text columns",
+                        recommended_fix="Trim extra spaces on text",
                         fix_key="trim_whitespace",
                     )
                 )
@@ -202,11 +202,11 @@ def collect_findings(
                         severity="low",
                         pillar="consistency",
                         title=f"“{col.name}” looks like currency text",
-                        detail="Symbols or thousands separators will block numeric analysis.",
+                        detail="Symbols or thousands separators will block sums and averages.",
                         column=col.name,
                         count=int(sample.str.contains(r"[\$€£¥₹]", regex=True).sum()),
                         samples=_sample_strings(sample, 4),
-                        recommended_fix="Strip currency symbols and commas",
+                        recommended_fix="Turn currency text into numbers",
                         fix_key="strip_currency",
                     )
                 )
@@ -231,12 +231,12 @@ def collect_findings(
                     id=f"fuzzy:{column}",
                     severity="medium",
                     pillar="uniqueness",
-                    title=f"{n_groups:,} near-duplicate group(s) in “{column}”",
-                    detail="Same person or label spelled more than one way (case, spaces, small typos).",
+                    title=f"{n_groups:,} similar-spelling group{'s' if n_groups != 1 else ''} in “{column}”",
+                    detail="Same person or label written more than one way (case, spaces, small typos).",
                     column=column,
                     count=n_groups,
                     samples=samples_by_col.get(column, [])[:4],
-                    recommended_fix="Collapse near-duplicates to the suggested spelling",
+                    recommended_fix="Merge similar spellings to the spelling you keep",
                     fix_key="collapse_fuzzy",
                 )
             )

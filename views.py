@@ -38,25 +38,29 @@ def show_frame(df: pd.DataFrame) -> None:
 
 def _score_caption(score: int) -> str:
     if score >= 85:
-        return "Solid — only polish remaining."
+        return "In good shape — mostly polish."
     if score >= 70:
-        return "Usable, but a few issues will bite you later."
+        return "Usable, with a few issues worth fixing."
     if score >= 50:
-        return "Messy — cleaning will save you real time."
-    return "High risk — do not analyze this as-is."
+        return "Messy. Cleaning will save real time."
+    return "High risk. Do not analyze this as-is."
 
 
 def render_quality_report(df: pd.DataFrame, report: QualityReport, fuzzy_scan) -> list[Finding]:
     section_header(
-        "02  ·  Diagnosis",
-        "Data quality report",
-        "The score is a headline. The findings below are why it is that number.",
+        "02  ·  Score",
+        "What we found",
+        "The score is the headline. The cards below explain it.",
     )
     findings = collect_findings(df, report, fuzzy_scan)
     high = sum(1 for f in findings if f.severity == "high")
     caption = _score_caption(report.score)
     if findings:
-        caption = f"{caption} {len(findings)} finding(s), {high} high."
+        caption = f"{caption} {len(findings)} issue{'s' if len(findings) != 1 else ''}"
+        if high:
+            caption += f", {high} serious."
+        else:
+            caption += "."
     quality_score_bento(
         report.score,
         caption,
@@ -72,56 +76,56 @@ def render_quality_report(df: pd.DataFrame, report: QualityReport, fuzzy_scan) -
         rows.append(
             {
                 "column": col.name,
-                "looks like": col.inferred_role or "—",
-                "missing %": col.missing_pct,
-                "missing count": col.missing_count,
-                "empty / placeholder values": col.empty_string_count,
-                "date formats seen": ", ".join(col.date_formats) or "—",
+                "likely type": col.inferred_role or "—",
+                "empty %": col.missing_pct,
+                "empty cells": col.missing_count,
+                "placeholder text": col.empty_string_count,
+                "date formats": ", ".join(col.date_formats) or "—",
                 "invalid emails": col.invalid_email_count,
                 "invalid phones": col.invalid_phone_count,
             }
         )
-    st.caption("Column-by-column diagnosis")
+    st.caption("Every column, in one table")
     st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
     return findings
 
 
 def render_fuzzy_scan(scan) -> list[FuzzyGroup]:
     section_header(
-        "03  ·  Near-matches",
-        "Fuzzy duplicates",
-        "Pick a keeper per group. Uncheck a group or skip a column to leave those spellings alone.",
+        "03  ·  Similar names",
+        "Similar spellings",
+        "Same person or label, written more than one way. Keep one spelling, or skip a group.",
     )
     if scan.skipped_columns:
         st.warning(
-            "These columns were not scanned — too many unique values for a full pass. "
-            f"Scan anyway uses the {MAX_UNIQUE:,} most common values, not every spelling."
+            "These columns have too many unique values for a full scan. "
+            f"If you turn one on, we only check the {MAX_UNIQUE:,} most common spellings."
         )
         prefix = str(st.session_state.get("file_key", ""))
         for col in scan.skipped_columns:
             n = scan.skipped_unique_counts.get(col, 0)
             st.checkbox(
-                f"Scan “{col}” anyway ({n:,} unique values)",
+                f"Also scan “{col}” ({n:,} unique values)",
                 value=False,
                 key=f"fuzzy_force_{prefix}_{col}",
-                help=f"Scans the {MAX_UNIQUE:,} most common values in this column (not every unique).",
+                help=f"Only the {MAX_UNIQUE:,} most common values in this column. Rare spellings are skipped.",
             )
     if scan.sampled_columns:
         bits = [
             f"{col} ({n:,} unique, scanned top {MAX_UNIQUE:,})"
             for col, n in scan.sampled_columns.items()
         ]
-        st.caption("Sampled for speed: " + "; ".join(bits))
+        st.caption("Checked the most common values only: " + "; ".join(bits))
     if not scan.scanned_columns:
-        st.info("No text columns were small enough to scan.")
+        st.info("No text columns were small enough to scan for similar spellings.")
         st.session_state["fuzzy_selected"] = []
         return []
     if not scan.groups:
-        st.success("No near-duplicate groups found in the scanned text columns.")
+        st.success("No similar-spelling groups in the columns we scanned.")
         st.session_state["fuzzy_selected"] = []
         return []
 
-    st.warning(f"Found {len(scan.groups)} near-duplicate group(s) to review.")
+    st.info(f"{len(scan.groups)} similar-spelling group{'s' if len(scan.groups) != 1 else ''} to review.")
     prefix = str(st.session_state.get("file_key", ""))
     selected: list[FuzzyGroup] = []
     by_column: dict[str, list] = {}
@@ -130,10 +134,10 @@ def render_fuzzy_scan(scan) -> list[FuzzyGroup]:
 
     for column, groups in by_column.items():
         skip_col = st.checkbox(
-            f"Skip column “{column}”",
+            f"Leave “{column}” unchanged",
             value=False,
             key=f"fuzzy_skipcol_{prefix}_{column}",
-            help="Leave every spelling in this column unchanged.",
+            help="Do not merge any spellings in this column.",
         )
         if skip_col:
             continue
@@ -174,17 +178,20 @@ def render_fuzzy_scan(scan) -> list[FuzzyGroup]:
                     )
                     selected.append(chosen)
     st.session_state["fuzzy_selected"] = selected
-    st.caption(f"{len(selected)} group(s) will merge if you include Collapse near-duplicates in the plan.")
+    st.caption(
+        f"{len(selected)} group{'s' if len(selected) != 1 else ''} will merge "
+        "if Merge similar spellings is in the plan."
+    )
     return selected
 
 def render_profile_picker() -> CleaningProfile:
     profile_id = st.radio(
-        "Starting plan",
+        "Start from",
         [p.id for p in PROFILES],
         format_func=lambda i: get_profile(i).label,
         horizontal=True,
         key="cleaning_profile",
-        help="A profile seeds the checkboxes. Skip any step you do not want.",
+        help="This ticks the steps. You can still turn any of them off.",
     )
     profile = get_profile(profile_id)
     st.caption(profile.summary)
@@ -212,9 +219,12 @@ def render_recipe_editor(recipe, profile: CleaningProfile) -> tuple[list[str], b
                 label_visibility="collapsed",
             )
         with cols[1]:
-            status = "in plan" if on else "skipped"
+            status = "on" if on else "off"
+            weight = {"high": "serious", "medium": "worth fixing", "low": "optional"}.get(
+                step.highest_severity, step.highest_severity
+            )
             st.markdown(
-                f"**{step.label}** · {step.highest_severity} · {status}  \n"
+                f"**{step.label}** · {weight} · {status}  \n"
                 f"{step.summary}"
             )
         if on:
@@ -223,16 +233,16 @@ def render_recipe_editor(recipe, profile: CleaningProfile) -> tuple[list[str], b
     dayfirst = False
     if "fix_dates" in included:
         dayfirst = st.checkbox(
-            "Dates are day-first (DD/MM/YYYY)",
-            help="Turn this on for most non-US date formats.",
+            "Dates are day-first (31/12/2024, not 12/31/2024)",
+            help="Turn this on outside the US.",
             key="recipe_dayfirst",
         )
     return included, dayfirst
 
 
 def collect_cleaning_options(df: pd.DataFrame, has_fuzzy: bool) -> CleaningOptions:
-    with st.expander("Advanced operations — full toolkit"):
-        st.caption("Use this for fills, row drops, casing, and renames that are not in the plan.")
+    with st.expander("Advanced — extra tools"):
+        st.caption("Fills, dropping rows, casing, and renaming live here. They are not in the plan above.")
         return _collect_cleaning_options_body(df, has_fuzzy)
 
 
@@ -241,41 +251,41 @@ def _collect_cleaning_options_body(df: pd.DataFrame, has_fuzzy: bool) -> Cleanin
 
     st.subheader("Duplicates")
     options.drop_exact_duplicates = st.checkbox(
-        "Remove exact duplicate rows",
-        help="Keeps the first copy of each duplicated row.",
+        "Remove duplicate rows",
+        help="Keeps the first copy of each identical row.",
     )
     if options.drop_exact_duplicates:
         options.duplicate_subset = st.multiselect(
-            "Compare duplicates using these columns only (optional)",
+            "Only treat rows as duplicates if these columns match (optional)",
             list(df.columns),
-            help="Leave empty to compare entire rows.",
+            help="Leave empty to compare the whole row.",
         ) or None
     options.collapse_fuzzy = st.checkbox(
-        "Collapse near-duplicates to the suggested spelling",
+        "Merge similar spellings to the spelling you kept above",
         disabled=not has_fuzzy,
-        help="Uses the fuzzy groups shown above.",
+        help="Uses the groups you reviewed under Similar spellings.",
     )
 
     st.subheader("Text, dates, and numbers")
-    options.trim_whitespace = st.checkbox("Trim whitespace on text columns")
-    options.fix_dates = st.checkbox("Fix date-like columns (parse to datetime)")
+    options.trim_whitespace = st.checkbox("Trim extra spaces on text")
+    options.fix_dates = st.checkbox("Turn date-like text into real dates")
     if options.fix_dates:
         options.dayfirst = st.checkbox(
-            "Dates are day-first (DD/MM/YYYY)",
-            help="Turn this on for most non-US date formats.",
+            "Dates are day-first (31/12/2024, not 12/31/2024)",
+            help="Turn this on outside the US.",
         )
     options.casing = st.selectbox(
-        "Standardize text casing",
+        "Text casing",
         ["none", "title", "lower", "upper"],
         format_func=lambda x: {
-            "none": "Leave casing as-is",
+            "none": "Leave as-is",
             "title": "Title Case",
             "lower": "lowercase",
             "upper": "UPPERCASE",
         }[x],
     )
-    options.fix_emails = st.checkbox("Validate / fix emails (trim + lowercase)")
-    options.normalize_phones = st.checkbox("Normalize phone numbers")
+    options.fix_emails = st.checkbox("Clean emails (trim and lowercase)")
+    options.normalize_phones = st.checkbox("Standardize phone numbers")
     if options.normalize_phones:
         options.phone_format = st.radio(
             "Phone format",
@@ -284,49 +294,49 @@ def _collect_cleaning_options_body(df: pd.DataFrame, has_fuzzy: bool) -> Cleanin
             horizontal=True,
         )
     options.strip_currency = st.checkbox(
-        "Strip currency symbols and commas from numbers ($1,234 → 1234)"
+        "Turn currency text into numbers ($1,234 → 1234)"
     )
 
     st.subheader("Missing values")
     options.missing_strategy = st.selectbox(
-        "How to handle missing values",
+        "Empty cells",
         ["leave", "drop_rows", "drop_columns", "fill"],
         format_func=lambda x: {
-            "leave": "Leave missing values",
-            "drop_rows": "Remove rows that have any missing value",
-            "drop_columns": "Remove columns that are mostly missing",
-            "fill": "Fill missing values",
+            "leave": "Leave them",
+            "drop_rows": "Remove any row with an empty cell",
+            "drop_columns": "Remove columns that are mostly empty",
+            "fill": "Fill empty cells",
         }[x],
     )
     if options.missing_strategy == "drop_columns":
         options.missing_threshold_pct = st.slider(
-            "Drop column if missing % is at least",
+            "Drop column if empty % is at least",
             min_value=10,
             max_value=100,
             value=100,
         )
     if options.missing_strategy == "fill":
         options.numeric_fill = st.selectbox(
-            "Numeric columns",
+            "Numbers",
             ["none", "mean", "median"],
             format_func=lambda x: {
-                "none": "Do not auto-fill numbers",
-                "mean": "Fill with mean",
-                "median": "Fill with median",
+                "none": "Do not fill numbers automatically",
+                "mean": "Fill with the average",
+                "median": "Fill with the median",
             }[x],
         )
         options.fill_value = st.text_input(
-            "Fill other columns with this value (optional)",
+            "Fill other columns with (optional)",
             placeholder="e.g. Unknown",
         )
 
-    st.subheader("Columns and empty cells")
+    st.subheader("Column names and blank rows")
     options.rename_style = st.selectbox(
         "Rename columns",
         ["none", "snake", "lower"],
         format_func=lambda x: {
             "none": "Keep names",
-            "snake": "lowercase with underscores",
+            "snake": "lowercase_with_underscores",
             "lower": "lowercase (keep spaces)",
         }[x],
     )
@@ -343,10 +353,10 @@ def _collect_cleaning_options_body(df: pd.DataFrame, has_fuzzy: bool) -> Cleanin
 
 
 def render_pre_apply_preview(df: pd.DataFrame, options: CleaningOptions) -> None:
-    st.caption("What will change — a dry look. Nothing is applied yet.")
+    st.caption("Preview only. Nothing is applied until you click below.")
     if options.drop_exact_duplicates:
         dupes = preview_duplicate_rows(df, options.duplicate_subset)
-        st.write(f"Exact duplicate rows that would be dropped: **{len(dupes):,}**")
+        st.write(f"Duplicate rows that would be removed: **{len(dupes):,}**")
         if not dupes.empty:
             st.dataframe(dupes.head(50), use_container_width=True)
             if len(dupes) > 50:
@@ -361,10 +371,10 @@ def render_pre_apply_preview(df: pd.DataFrame, options: CleaningOptions) -> None
         empty_rows = int(df.isna().all(axis=1).sum())
         st.write(f"Completely empty rows that would be removed: **{empty_rows:,}**")
     if options.collapse_fuzzy:
-        st.write("Near-duplicates will be collapsed to the suggested values shown above.")
+        st.write("Similar spellings will be merged to the values you kept above.")
     if options.missing_strategy == "drop_rows":
         st.write(
-            f"Rows with any missing value that would be removed: **{int(df.isna().any(axis=1).sum()):,}**"
+            f"Rows with any empty cell that would be removed: **{int(df.isna().any(axis=1).sum()):,}**"
         )
 
 
@@ -381,16 +391,16 @@ def _receipt_reports(original: pd.DataFrame, cleaned: pd.DataFrame) -> tuple[Qua
 
 def render_before_after(original: pd.DataFrame, cleaned: pd.DataFrame, log) -> None:
     section_header(
-        "05  ·  Receipt",
-        "Before vs after",
-        "The same score, before the plan and after. This is the screenshot to send.",
+        "05  ·  Result",
+        "Before and after",
+        "The score before the plan, then after. This is the screenshot to send.",
     )
     before, after = _receipt_reports(original, cleaned)
     delta = after.score - before.score
     sign = f"+{delta}" if delta > 0 else str(delta)
     quality_score_bento(
         before.score,
-        f"{_score_caption(after.score)} Change {sign} points.",
+        f"{_score_caption(after.score)} {sign} points.",
         before.completeness,
         before.uniqueness,
         before.consistency,
@@ -407,7 +417,7 @@ def render_before_after(original: pd.DataFrame, cleaned: pd.DataFrame, log) -> N
             ("era-tile-lg", "Columns", f"{log.cols_after:,}", f"Was {log.cols_before:,}"),
         ]
     )
-    st.caption("Change summary")
+    st.caption("What we did")
     st.dataframe(pd.DataFrame(log.as_rows()), use_container_width=True, hide_index=True)
     note_cards(log.steps)
 
@@ -435,9 +445,9 @@ def render_export(
     remaining_findings: int = 0,
 ) -> None:
     section_header(
-        "06  ·  Deliverable",
-        "Export",
-        "The cleaned table, plus a certificate: score, every rule, and a sample of what changed.",
+        "06  ·  Files",
+        "Download",
+        "The clean table, plus a certificate: the score, every step, and a sample of what changed.",
     )
     before, after = _receipt_reports(original, cleaned)
     steps = tuple(st.session_state.get("applied_steps") or [])
@@ -482,14 +492,15 @@ def render_export(
     summary_csv = bundle["summary_csv"]
     pack = bundle["pack"]
     st.caption(
-        f"Certificate · score {cert.score_before} → {cert.score_after} · "
-        f"{cert.dropped_total:,} dropped row(s) · {cert.changed_total:,} changed cell(s)"
+        f"Score {cert.score_before} → {cert.score_after} · "
+        f"{cert.dropped_total:,} row{'s' if cert.dropped_total != 1 else ''} removed · "
+        f"{cert.changed_total:,} cell{'s' if cert.changed_total != 1 else ''} changed"
     )
 
     c1, c2, c3, c4 = st.columns(4)
     with c1:
         st.download_button(
-            "Certificate (PDF)  ↗",
+            "Certificate PDF  ↗",
             data=pdf_data,
             file_name="cleaning_certificate.pdf",
             mime="application/pdf",
@@ -497,7 +508,7 @@ def render_export(
         )
     with c2:
         st.download_button(
-            "Download CSV  ↗",
+            "Clean CSV  ↗",
             data=csv_data,
             file_name="cleaned_data.csv",
             mime="text/csv",
@@ -505,7 +516,7 @@ def render_export(
         )
     with c3:
         st.download_button(
-            "Download Excel  ↗",
+            "Clean Excel  ↗",
             data=excel_data,
             file_name="cleaned_data.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -513,14 +524,14 @@ def render_export(
         )
     with c4:
         st.download_button(
-            "Summary (txt)  ↗",
+            "Change log  ↗",
             data=summary_text,
             file_name="cleaning_summary.txt",
             mime="text/plain",
             use_container_width=True,
         )
     st.download_button(
-        "Summary (CSV)  ↗",
+        "Change log (CSV)  ↗",
         data=summary_csv,
         file_name="cleaning_summary.csv",
         mime="text/csv",
@@ -528,11 +539,11 @@ def render_export(
     )
     handoff_card(EXCEL_REPORT_AUTOMATOR_URL)
     st.download_button(
-        "Handoff pack (Excel + certificate)  ↗",
+        "Briefing pack  ↗",
         data=pack,
         file_name="handoff_for_automator.zip",
         mime="application/zip",
         use_container_width=True,
-        help="Upload cleaned_data.xlsx from this zip into Excel Report Automator.",
+        help="Contains cleaned_data.xlsx and the certificate. Upload the Excel file in Excel Report Automator.",
     )
 

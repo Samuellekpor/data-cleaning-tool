@@ -1,24 +1,24 @@
 # Data Cleaning Tool
 
-A Streamlit **data-quality inspector**. Upload messy CSV or Excel, read what is wrong, approve a repair plan, then export a cleaned table plus a certificate you can send with the file.
+A Streamlit **data-quality inspector**. Upload messy CSV or Excel, see what is wrong, choose a plan, then export a cleaned table plus a certificate you can send with the file.
 
 It is the step before a briefing, not a silent pandas script. Companion product: [Excel Report Automator](https://github.com/Samuellekpor/excel-report-automator).
 
 ## What it does
 
 - Accepts `.csv`, `.xlsx`, and `.xls` (several files can be stacked into one table)
-- Diagnoses missingness, exact duplicates, mixed date formats, placeholders, and likely ID / email / phone columns
+- Flags empty cells, duplicate rows, mixed date formats, placeholders, and likely ID / email / phone columns
 - Shows a **0–100 quality score** before anything is cleaned — completeness 40%, uniqueness 30%, consistency 30%
-- Lists **findings** with severity, column, samples, and a recommended fix
-- Finds **fuzzy near-duplicates** in text (`difflib`). Columns with more than 5,000 unique values are skipped unless you turn on Scan anyway (then the 5,000 most common values are scanned)
-- Lets you **approve a plan**: skip any step, then apply from the original file in one pass
+- Lists **findings** with severity, column, samples, and a suggested fix
+- Finds **similar spellings** in text (`difflib`). Columns with more than 5,000 unique values are skipped unless you turn on Also scan (then the 5,000 most common values are scanned)
+- Lets you **choose a plan**: skip any step, then apply from the original file in one pass
 - Named starting plans: **From findings**, **CRM contacts**, **Transactions**, **Survey**
-- Save the current plan as JSON and reload it, or re-run the last accepted recipe on the next file
-- Receipt: score before → after, change log, before/after tables
-- Export: cleaned CSV/Excel, certificate PDF, text/CSV summaries, and a handoff zip for the Automator. CSV/Excel prefix a quote on cells that look like spreadsheet formulas (`=`, `+`, `-`, `@`).
+- Save the current plan as JSON and reload it, or reuse the last plan on the next file
+- Result: score before → after, change log, before/after tables
+- Export: cleaned CSV/Excel, certificate PDF, text/CSV summaries, and a briefing pack for the Automator. CSV/Excel prefix a quote on cells that look like spreadsheet formulas (`=`, `+`, `-`, `@`).
 - Advanced toolkit (casing, fills, row drops, renames) stays behind an expander
 
-The pandas operations never run until you accept the plan or apply Advanced.
+The pandas operations never run until you apply the plan or apply Advanced.
 
 ## How to run
 
@@ -33,12 +33,12 @@ Open the URL Streamlit prints (usually http://localhost:8501).
 
 ## Workflow
 
-1. **Intake** — drop files. Merge only when the tables are the same kind.
-2. **Diagnosis** — read the score and the finding cards. Nothing has been cleaned yet.
-3. **Near-matches** — pick a keeper per group, or skip a group / column.
-4. **Plan** — start from findings or a named profile, skip steps, optionally save or load a recipe JSON, then Accept plan.
-5. **Receipt** — score before → after and the change log.
-6. **Deliverable** — download the table, the certificate, and (if you want a briefing) the Automator handoff pack.
+1. **Upload** — drop files. Combine only when the tables are the same kind.
+2. **Score** — read the findings. Nothing has been cleaned yet.
+3. **Similar spellings** — pick a keeper per group, or skip a group / column.
+4. **Plan** — start from findings or a named profile, skip steps, optionally save or load a plan JSON, then Apply this plan.
+5. **Result** — score before → after and the change log.
+6. **Files** — download the table, the certificate, and (if you want a briefing) the Automator pack.
 
 ## Requirements
 
@@ -50,7 +50,7 @@ Open the URL Streamlit prints (usually http://localhost:8501).
 | File | Role |
 | --- | --- |
 | `app.py` | Streamlit wiring |
-| `views.py` | Diagnosis, plan, receipt, and export UI |
+| `views.py` | Score, plan, result, and export UI |
 | `ui.py` | OLED / copper chrome |
 | `quality.py` | Score and column diagnosis |
 | `findings.py` | Reviewable issue list |
@@ -63,4 +63,4 @@ Open the URL Streamlit prints (usually http://localhost:8501).
 
 ## Not in this branch
 
-Column contracts (fail the score if a field breaks a rule), a messy sample in the empty state, and a hard “preview before any row drop” gate on Accept plan are not shipped yet.
+Column contracts (fail the score if a field breaks a rule), a messy sample in the empty state, and a hard “preview before any row drop” gate on Apply this plan are not shipped yet.

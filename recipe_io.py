@@ -31,11 +31,11 @@ def recipe_from_json(raw: str | bytes) -> dict[str, Any]:
         raw = raw.decode("utf-8")
     data = json.loads(raw)
     if not isinstance(data, dict) or "fix_keys" not in data:
-        raise ValueError("This file is not a cleaning recipe.")
+        raise ValueError("This file is not a saved cleaning plan.")
     allowed = set(STEP_ORDER)
     keys = [k for k in data.get("fix_keys") or [] if k in allowed]
     if not keys:
-        raise ValueError("This recipe has no recognised cleaning steps.")
+        raise ValueError("This plan has no steps we recognise.")
     profile = data.get("profile") or "findings"
     if not isinstance(profile, str):
         profile = "findings"

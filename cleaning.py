@@ -60,18 +60,18 @@ class ChangeLog:
             {"item": "Rows after", "value": self.rows_after},
             {"item": "Columns before", "value": self.cols_before},
             {"item": "Columns after", "value": self.cols_after},
-            {"item": "Exact duplicates dropped", "value": self.duplicates_dropped},
+            {"item": "Duplicate rows removed", "value": self.duplicates_dropped},
             {"item": "Empty rows removed", "value": self.empty_rows_removed},
             {"item": "Empty columns removed", "value": self.empty_cols_removed},
-            {"item": "Missing values filled", "value": self.missing_filled},
-            {"item": "Fuzzy values collapsed", "value": self.fuzzy_collapsed},
+            {"item": "Empty cells filled", "value": self.missing_filled},
+            {"item": "Similar spellings merged", "value": self.fuzzy_collapsed},
             {
                 "item": "Columns renamed",
                 "value": ", ".join(f"{a} → {b}" for a, b in self.columns_renamed.items())
                 or "—",
             },
             {
-                "item": "Date columns parsed",
+                "item": "Date columns fixed",
                 "value": ", ".join(self.dates_parsed) or "—",
             },
             {
@@ -157,7 +157,7 @@ def apply_cleaning(
             out[col] = out[col].map(
                 lambda v: v.strip() if isinstance(v, str) else v
             )
-        log.steps.append("Trimmed leading/trailing whitespace on text columns.")
+        log.steps.append("Trimmed extra spaces on text columns.")
         log.standardized.append("whitespace")
 
     if options.collapse_fuzzy:
@@ -178,10 +178,10 @@ def apply_cleaning(
         log.fuzzy_collapsed = collapsed
         if collapsed:
             log.steps.append(
-                f"Collapsed {collapsed} near-duplicate value(s) across {merged_groups} group(s)."
+                f"Merged {collapsed} similar-spelling value(s) across {merged_groups} group(s)."
             )
         elif not groups:
-            log.steps.append("Fuzzy collapse skipped — no groups were selected.")
+            log.steps.append("Similar-spelling merge skipped — no groups were selected.")
 
     if options.casing != "none":
         fn = {"title": str.title, "lower": str.lower, "upper": str.upper}[options.casing]
@@ -209,7 +209,7 @@ def apply_cleaning(
                 lambda v: _clean_phone(v, options.phone_format)
             )
             log.standardized.append(f"phone:{col}")
-        log.steps.append("Normalized phone numbers (non-digits stripped).")
+        log.steps.append("Standardized phone numbers (punctuation removed).")
 
     if options.strip_currency:
         for col in out.columns:
@@ -218,7 +218,7 @@ def apply_cleaning(
                 out[col] = converted
                 log.standardized.append(f"currency:{col}")
         if any(s.startswith("currency:") for s in log.standardized):
-            log.steps.append("Stripped currency symbols and thousands separators from numeric-looking columns.")
+            log.steps.append("Turned currency text into numbers (symbols and commas removed).")
 
     if options.fix_dates:
         for col in out.columns:
@@ -234,7 +234,7 @@ def apply_cleaning(
                 log.dates_parsed.append(str(col))
         if log.dates_parsed:
             log.steps.append(
-                "Parsed date-like columns"
+                "Fixed date-like columns"
                 + (" (day-first)." if options.dayfirst else ".")
             )
 
@@ -257,7 +257,7 @@ def apply_cleaning(
         before_n = len(out)
         out = out.dropna(how="any")
         dropped = before_n - len(out)
-        log.steps.append(f"Dropped {dropped} row(s) that still had missing values.")
+        log.steps.append(f"Removed {dropped} row(s) that still had empty cells.")
     elif options.missing_strategy == "drop_columns":
         drop = [
             c
@@ -268,8 +268,8 @@ def apply_cleaning(
         if drop:
             out = out.drop(columns=drop)
             log.steps.append(
-                "Dropped columns over missing threshold "
-                f"({options.missing_threshold_pct:.0f}%): " + ", ".join(map(str, drop))
+                "Removed columns that were mostly empty "
+                f"({options.missing_threshold_pct:.0f}%+ empty): " + ", ".join(map(str, drop))
             )
     elif options.missing_strategy == "fill":
         filled = 0
@@ -286,7 +286,7 @@ def apply_cleaning(
                 out[col] = out[col].fillna(options.fill_value)
         log.missing_filled = filled
         if filled:
-            log.steps.append(f"Filled {filled} missing value(s).")
+            log.steps.append(f"Filled {filled} empty cell(s).")
 
     if options.drop_exact_duplicates:
         before_n = len(out)
@@ -296,8 +296,8 @@ def apply_cleaning(
         out = out.drop_duplicates(subset=subset, keep="first")
         log.duplicates_dropped = before_n - len(out)
         log.steps.append(
-            f"Dropped {log.duplicates_dropped} exact duplicate row(s)"
-            + (f" (key columns: {', '.join(subset)})." if subset else ".")
+            f"Removed {log.duplicates_dropped} duplicate row(s)"
+            + (f" (matched on: {', '.join(subset)})." if subset else ".")
         )
 
     rename_map: dict[str, str] = {}

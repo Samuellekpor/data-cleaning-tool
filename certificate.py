@@ -87,9 +87,9 @@ class CleaningCertificate:
         for step in self.rules:
             lines.append(f"- {step}")
         lines.append("")
-        lines.append(f"Dropped rows: {self.dropped_total}")
+        lines.append(f"Rows removed: {self.dropped_total}")
         if self.dropped_sample:
-            lines.append("Sample of dropped rows:")
+            lines.append("Sample of removed rows:")
             for rec in self.dropped_sample:
                 bits = [f"{k}={v}" for k, v in rec.items() if k != "_row"]
                 lines.append(f"  row {rec.get('_row', '?')}: " + "; ".join(bits[:6]))
@@ -104,7 +104,7 @@ class CleaningCertificate:
         if self.remaining_findings:
             lines.append("")
             lines.append(
-                f"Findings still visible on the cleaned table: {self.remaining_findings}"
+                f"Issues still flagged on the cleaned table: {self.remaining_findings}"
             )
         return "\n".join(lines) + "\n"
 

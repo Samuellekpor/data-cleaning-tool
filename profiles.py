@@ -19,13 +19,13 @@ PROFILES: tuple[CleaningProfile, ...] = (
     CleaningProfile(
         id="findings",
         label="From findings",
-        summary="Use the diagnosis. Skip anything you do not want.",
+        summary="Use what we found. Turn off anything you do not want.",
         fix_keys=None,
     ),
     CleaningProfile(
         id="crm",
         label="CRM contacts",
-        summary="Trim, emails, phones, near-duplicates, exact copies.",
+        summary="Contacts: extra spaces, emails, phones, similar names, duplicate rows.",
         fix_keys=(
             "trim_whitespace",
             "collapse_fuzzy",
@@ -37,7 +37,7 @@ PROFILES: tuple[CleaningProfile, ...] = (
     CleaningProfile(
         id="transactions",
         label="Transactions",
-        summary="Trim, currency, day-first dates, exact copies.",
+        summary="Money tables: extra spaces, currency, day-first dates, duplicate rows.",
         fix_keys=(
             "trim_whitespace",
             "strip_currency",
@@ -49,7 +49,7 @@ PROFILES: tuple[CleaningProfile, ...] = (
     CleaningProfile(
         id="survey",
         label="Survey",
-        summary="Trim, empty columns, exact copies. Missing answers stay.",
+        summary="Responses: extra spaces, empty columns, duplicate rows. Blank answers stay.",
         fix_keys=(
             "trim_whitespace",
             "drop_empty_columns",

@@ -569,18 +569,18 @@ def hero() -> None:
         """
         <div class="era-hero">
           <div>
-            <div class="era-eyebrow">Quality inspector · no silent fixes</div>
-            <h1>Find what the<br>spreadsheet hides.</h1>
+            <div class="era-eyebrow">Inspect first · change nothing yet</div>
+            <h1>See what’s wrong<br>before you clean.</h1>
             <p class="era-lede">
-              Upload messy files. We diagnose missingness, duplicates, dates,
-              and near-matches you would never catch by eye — then score the
-              damage before a single cell is changed.
+              Upload a messy file. We flag empty cells, duplicate rows, mixed dates,
+              and names written more than one way — then score the file before
+              a single cell is changed.
             </p>
           </div>
           <div class="era-hero-aside">
-            <strong>What you leave with.</strong><br>
-            A quality score, a reviewable plan, a cleaning certificate,
-            and a cleaned table ready for the Excel Report Automator.
+            <strong>What you take away.</strong><br>
+            A quality score, a plan you can edit, a certificate of what changed,
+            and a clean table ready to brief.
           </div>
         </div>
         """,
@@ -591,15 +591,15 @@ def hero() -> None:
 def sidebar_chrome() -> None:
     st.markdown(
         f"""
-        <div class="era-eyebrow">Protocol</div>
-        <div class="era-side-title">How this works</div>
+        <div class="era-eyebrow">How it works</div>
+        <div class="era-side-title">Four steps</div>
         <ol class="era-steps">
-          <li><b>01</b><span>Drop .xlsx, .xls, or .csv — several files are fine</span></li>
-          <li><b>02</b><span>Read the quality score first. Nothing has been cleaned yet</span></li>
-          <li><b>03</b><span>Approve the plan — skip any step you do not want</span></li>
-          <li><b>04</b><span>Apply, export the certificate, then brief the cleaned table</span></li>
+          <li><b>01</b><span>Upload CSV or Excel. Several files are fine.</span></li>
+          <li><b>02</b><span>Read the score and the findings. Nothing is cleaned yet.</span></li>
+          <li><b>03</b><span>Tick the fixes you want. Skip the rest.</span></li>
+          <li><b>04</b><span>Apply, then download the clean file and the certificate.</span></li>
         </ol>
-        <p class="era-note">Need a polished briefing from the cleaned table?</p>
+        <p class="era-note">Need a written briefing from the clean table?</p>
         <a class="era-cta" href="{EXCEL_REPORT_AUTOMATOR_URL}">
           Excel Report Automator
           <span class="era-cta-icon">↗</span>
@@ -652,7 +652,7 @@ def quality_score_bento(
 
     headline = score if after_score is None else after_score
     width = max(0.0, min(100.0, float(headline)))
-    kicker = "Your data quality score" if after_score is None else "Score before → after"
+    kicker = "Quality score" if after_score is None else "Score before → after"
     big = (
         f'{score}<span style="font-size:0.38em;letter-spacing:-0.02em;color:rgba(243,241,236,0.45)">/100</span>'
         if after_score is None
@@ -662,9 +662,9 @@ def quality_score_bento(
         )
     )
     copies_hint = (
-        "Duplicate rows in the raw file"
+        "Same row, more than once"
         if after_duplicates is None
-        else f"Was {duplicates:,} exact copies"
+        else f"Was {duplicates:,} before cleaning"
     )
     st.markdown(
         f"""
@@ -684,7 +684,7 @@ def quality_score_bento(
               <div class="era-core">
                 <div class="era-kicker">Completeness</div>
                 <div class="era-value">{_pair(completeness, after_completeness, as_int=True)}</div>
-                <p class="era-note" style="margin:0.65rem 0 0">Weight ~40%</p>
+                <p class="era-note" style="margin:0.65rem 0 0">How full the cells are · 40% of the score</p>
               </div>
             </div>
           </div>
@@ -693,7 +693,7 @@ def quality_score_bento(
               <div class="era-core">
                 <div class="era-kicker">Uniqueness</div>
                 <div class="era-value">{_pair(uniqueness, after_uniqueness, as_int=True)}</div>
-                <p class="era-note" style="margin:0.65rem 0 0">Weight ~30%</p>
+                <p class="era-note" style="margin:0.65rem 0 0">How many rows are unique · 30% of the score</p>
               </div>
             </div>
           </div>
@@ -702,14 +702,14 @@ def quality_score_bento(
               <div class="era-core">
                 <div class="era-kicker">Consistency</div>
                 <div class="era-value">{_pair(consistency, after_consistency, as_int=True)}</div>
-                <p class="era-note" style="margin:0.65rem 0 0">Weight ~30%</p>
+                <p class="era-note" style="margin:0.65rem 0 0">How consistent the formats are · 30% of the score</p>
               </div>
             </div>
           </div>
           <div class="era-tile-lg">
             <div class="era-shell">
               <div class="era-core">
-                <div class="era-kicker">Exact copies</div>
+                <div class="era-kicker">Duplicate rows</div>
                 <div class="era-value">{_pair(duplicates, after_duplicates, as_int=True)}</div>
                 <p class="era-note" style="margin:0.65rem 0 0">{escape(copies_hint)}</p>
               </div>
@@ -745,10 +745,11 @@ def handoff_card(url: str) -> None:
         f"""
         <div class="era-shell" style="margin:1.5rem 0 0.85rem">
           <div class="era-core">
-            <div class="era-kicker">Next · briefing</div>
+            <div class="era-kicker">Next</div>
             <p class="era-lede" style="margin:0 0 0.95rem">
-              This table is ready to brief. Download the handoff pack, then open
-              Excel Report Automator and upload cleaned_data.xlsx.
+              Download the pack, then open cleaned_data.xlsx in Excel Report
+              Automator to write the briefing. Keep the PDF with it if someone
+              needs proof of what changed.
             </p>
             <a class="era-cta" href="{escape(url)}" target="_blank" rel="noopener">
               Open Excel Report Automator
@@ -767,8 +768,8 @@ def recipe_banner(line: str) -> None:
             """
             <div class="era-shell">
               <div class="era-core">
-                <div class="era-kicker">Proposed plan</div>
-                <p class="era-lede" style="margin:0">Nothing to apply — skip to Advanced if you still want a manual pass.</p>
+                <div class="era-kicker">This plan</div>
+                <p class="era-lede" style="margin:0">Nothing is ticked. Open Advanced below if you still want extra tools.</p>
               </div>
             </div>
             """,
@@ -779,7 +780,7 @@ def recipe_banner(line: str) -> None:
         f"""
         <div class="era-shell">
           <div class="era-core">
-            <div class="era-kicker">Proposed plan</div>
+            <div class="era-kicker">This plan</div>
             <p class="era-lede" style="margin:0.35rem 0 0">{escape(line)}</p>
           </div>
         </div>
@@ -794,8 +795,8 @@ def finding_cards(findings) -> None:
             """
             <div class="era-shell">
               <div class="era-core">
-                <div class="era-kicker">Clean pass</div>
-                <p class="era-lede" style="margin:0">No structural issues jumped out — still read the score breakdown.</p>
+                <div class="era-kicker">Looks clean</div>
+                <p class="era-lede" style="margin:0">Nothing obvious stood out. Still glance at the score.</p>
               </div>
             </div>
             """,
@@ -817,7 +818,7 @@ def finding_cards(findings) -> None:
             else ""
         )
         fix = (
-            f'<p class="era-note" style="margin:0.45rem 0 0">Recommended: {escape(finding.recommended_fix)}</p>'
+            f'<p class="era-note" style="margin:0.45rem 0 0">Suggested: {escape(finding.recommended_fix)}</p>'
             if finding.recommended_fix
             else ""
         )

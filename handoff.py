@@ -5,13 +5,13 @@ from __future__ import annotations
 import zipfile
 from io import BytesIO
 
-HOWTO_BRIEF = """Brief this cleaned table in Excel Report Automator
+HOWTO_BRIEF = """How to brief this cleaned table
 
 1. Open Excel Report Automator (use the button in the Data Cleaning Tool, or run that app locally).
-2. Upload cleaned_data.xlsx from this folder.
-3. Keep cleaning_certificate.pdf with the briefing if someone needs the paper trail.
+2. Upload cleaned_data.xlsx from this folder — that is the spreadsheet, not the PDF.
+3. Keep cleaning_certificate.pdf with the briefing if someone needs a paper trail.
 
-Do not upload the PDF as the data file. The Automator reads CSV and Excel tables only.
+The Automator reads CSV and Excel tables only. Do not upload the PDF as the data file.
 """
 
 

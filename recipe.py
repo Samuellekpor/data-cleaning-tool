@@ -19,14 +19,14 @@ STEP_ORDER = (
 )
 
 STEP_LABELS = {
-    "trim_whitespace": "Trim whitespace",
-    "collapse_fuzzy": "Collapse near-duplicates",
-    "fix_emails": "Fix emails",
-    "normalize_phones": "Normalize phones",
-    "strip_currency": "Strip currency",
-    "fix_dates": "Parse dates",
+    "trim_whitespace": "Trim extra spaces",
+    "collapse_fuzzy": "Merge similar spellings",
+    "fix_emails": "Clean emails",
+    "normalize_phones": "Standardize phones",
+    "strip_currency": "Turn currency into numbers",
+    "fix_dates": "Fix mixed dates",
     "drop_empty_columns": "Remove empty columns",
-    "drop_exact_duplicates": "Drop exact duplicates",
+    "drop_exact_duplicates": "Remove duplicate rows",
 }
 
 
@@ -75,7 +75,7 @@ def build_recipe(
         else:
             highest = "low"
             columns = []
-            summary = "Included by the selected profile — no finding required."
+            summary = "This profile always includes this step, even if we did not flag it."
             default = True
         if forced is not None:
             default = key in forced
@@ -94,7 +94,7 @@ def build_recipe(
 
 
 def recipe_line(steps: list[RecipeStep], included_keys: list[str] | None = None) -> str:
-    """Human-readable plan, e.g. Trim → Parse dates → Drop exact duplicates."""
+    """Human-readable plan, e.g. Trim extra spaces → Fix mixed dates → Remove duplicate rows."""
     chosen = set(included_keys) if included_keys is not None else {
         s.fix_key for s in steps if s.default_include
     }

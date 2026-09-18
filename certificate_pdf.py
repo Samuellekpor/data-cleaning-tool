@@ -139,7 +139,7 @@ def render_certificate_pdf(cert: CleaningCertificate) -> bytes:
                 "Consistency",
                 f"{cert.consistency_before:.0f} -> {cert.consistency_after:.0f}",
             ),
-            ("Dropped rows", str(cert.dropped_total)),
+            ("Rows removed", str(cert.dropped_total)),
         ],
     )
 
@@ -153,7 +153,7 @@ def render_certificate_pdf(cert: CleaningCertificate) -> bytes:
             pdf.multi_cell(0, 6, _txt(f"{i:02d}.  {step}"))
             pdf.ln(1)
 
-    _heading(pdf, "Sample of dropped rows")
+    _heading(pdf, "Sample of removed rows")
     pdf.set_font("Helvetica", "", 10)
     pdf.set_text_color(*INK)
     if cert.dropped_total == 0:
@@ -205,14 +205,14 @@ def render_certificate_pdf(cert: CleaningCertificate) -> bytes:
             pdf.ln(0.5)
 
     if cert.remaining_findings:
-        _heading(pdf, "Still open")
+        _heading(pdf, "Still to review")
         pdf.set_font("Helvetica", "", 10)
         pdf.set_text_color(*INK)
         pdf.multi_cell(
             0,
             6,
             _txt(
-                f"{cert.remaining_findings} finding(s) still appear on the cleaned table."
+                f"{cert.remaining_findings} issue(s) still appear on the cleaned table."
             ),
         )
 
