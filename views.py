@@ -248,31 +248,42 @@ def collect_cleaning_options(df: pd.DataFrame, has_fuzzy: bool) -> CleaningOptio
 
 def _collect_cleaning_options_body(df: pd.DataFrame, has_fuzzy: bool) -> CleaningOptions:
     options = CleaningOptions()
+    prefix = str(st.session_state.get("file_key", ""))
 
     st.subheader("Duplicates")
     options.drop_exact_duplicates = st.checkbox(
         "Remove duplicate rows",
         help="Keeps the first copy of each identical row.",
+        key=f"adv_{prefix}_drop_exact_duplicates",
     )
     if options.drop_exact_duplicates:
         options.duplicate_subset = st.multiselect(
             "Only treat rows as duplicates if these columns match (optional)",
             list(df.columns),
             help="Leave empty to compare the whole row.",
+            key=f"adv_{prefix}_duplicate_subset",
         ) or None
     options.collapse_fuzzy = st.checkbox(
         "Merge similar spellings to the spelling you kept above",
         disabled=not has_fuzzy,
         help="Uses the groups you reviewed under Similar spellings.",
+        key=f"adv_{prefix}_collapse_fuzzy",
     )
 
     st.subheader("Text, dates, and numbers")
-    options.trim_whitespace = st.checkbox("Trim extra spaces on text")
-    options.fix_dates = st.checkbox("Turn date-like text into real dates")
+    options.trim_whitespace = st.checkbox(
+        "Trim extra spaces on text",
+        key=f"adv_{prefix}_trim_whitespace",
+    )
+    options.fix_dates = st.checkbox(
+        "Turn date-like text into real dates",
+        key=f"adv_{prefix}_fix_dates",
+    )
     if options.fix_dates:
         options.dayfirst = st.checkbox(
             "Dates are day-first (31/12/2024, not 12/31/2024)",
             help="Turn this on outside the US.",
+            key=f"adv_{prefix}_dayfirst",
         )
     options.casing = st.selectbox(
         "Text casing",
@@ -283,18 +294,27 @@ def _collect_cleaning_options_body(df: pd.DataFrame, has_fuzzy: bool) -> Cleanin
             "lower": "lowercase",
             "upper": "UPPERCASE",
         }[x],
+        key=f"adv_{prefix}_casing",
     )
-    options.fix_emails = st.checkbox("Clean emails (trim and lowercase)")
-    options.normalize_phones = st.checkbox("Standardize phone numbers")
+    options.fix_emails = st.checkbox(
+        "Clean emails (trim and lowercase)",
+        key=f"adv_{prefix}_fix_emails",
+    )
+    options.normalize_phones = st.checkbox(
+        "Standardize phone numbers",
+        key=f"adv_{prefix}_normalize_phones",
+    )
     if options.normalize_phones:
         options.phone_format = st.radio(
             "Phone format",
             ["digits", "dashed"],
             format_func=lambda x: "Digits only" if x == "digits" else "###-###-####",
             horizontal=True,
+            key=f"adv_{prefix}_phone_format",
         )
     options.strip_currency = st.checkbox(
-        "Turn currency text into numbers ($1,234 → 1234)"
+        "Turn currency text into numbers ($1,234 → 1234)",
+        key=f"adv_{prefix}_strip_currency",
     )
 
     st.subheader("Missing values")
@@ -307,6 +327,7 @@ def _collect_cleaning_options_body(df: pd.DataFrame, has_fuzzy: bool) -> Cleanin
             "drop_columns": "Remove columns that are mostly empty",
             "fill": "Fill empty cells",
         }[x],
+        key=f"adv_{prefix}_missing_strategy",
     )
     if options.missing_strategy == "drop_columns":
         options.missing_threshold_pct = st.slider(
@@ -314,6 +335,7 @@ def _collect_cleaning_options_body(df: pd.DataFrame, has_fuzzy: bool) -> Cleanin
             min_value=10,
             max_value=100,
             value=100,
+            key=f"adv_{prefix}_missing_threshold",
         )
     if options.missing_strategy == "fill":
         options.numeric_fill = st.selectbox(
@@ -324,10 +346,12 @@ def _collect_cleaning_options_body(df: pd.DataFrame, has_fuzzy: bool) -> Cleanin
                 "mean": "Fill with the average",
                 "median": "Fill with the median",
             }[x],
+            key=f"adv_{prefix}_numeric_fill",
         )
         options.fill_value = st.text_input(
             "Fill other columns with (optional)",
             placeholder="e.g. Unknown",
+            key=f"adv_{prefix}_fill_value",
         )
 
     st.subheader("Column names and blank rows")
@@ -339,16 +363,27 @@ def _collect_cleaning_options_body(df: pd.DataFrame, has_fuzzy: bool) -> Cleanin
             "snake": "lowercase_with_underscores",
             "lower": "lowercase (keep spaces)",
         }[x],
+        key=f"adv_{prefix}_rename_style",
     )
     with st.expander("Manual column renames"):
         manual = {}
         for col in df.columns:
-            new = st.text_input(f"{col}", value=str(col), key=f"rename_{col}")
+            new = st.text_input(
+                f"{col}",
+                value=str(col),
+                key=f"rename_{prefix}_{col}",
+            )
             if new.strip() and new.strip() != str(col):
                 manual[col] = new.strip()
         options.manual_renames = manual
-    options.drop_empty_columns = st.checkbox("Remove completely empty columns")
-    options.drop_empty_rows = st.checkbox("Remove completely empty rows")
+    options.drop_empty_columns = st.checkbox(
+        "Remove completely empty columns",
+        key=f"adv_{prefix}_drop_empty_columns",
+    )
+    options.drop_empty_rows = st.checkbox(
+        "Remove completely empty rows",
+        key=f"adv_{prefix}_drop_empty_rows",
+    )
     return options
 
 
