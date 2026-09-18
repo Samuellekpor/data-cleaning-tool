@@ -1,22 +1,26 @@
 from __future__ import annotations
 
-import io
-
 import pandas as pd
 import streamlit as st
 
-from cleaning import CleaningOptions, apply_cleaning, preview_duplicate_rows
+from cleaning import apply_cleaning, compose_rename_map, options_from_fix_keys
 from fuzzy import scan_fuzzy_duplicates
-from io_files import FileReadError, merge_frames, read_uploaded_file
-from quality import QualityReport, build_quality_report
-from ui import (
-    bento_tiles,
-    hero,
-    inject_theme,
-    note_cards,
-    quality_score_bento,
-    section_header,
-    sidebar_chrome,
+from io_files import FileReadError, fingerprint_bytes, merge_frames, read_uploaded_file, unique_upload_name
+from profiles import PROFILE_BY_ID
+from quality import build_quality_report
+from recipe import STEP_ORDER, build_recipe, recipe_line
+from recipe_io import recipe_from_json, recipe_payload, recipe_to_json
+from ui import hero, inject_theme, section_header, sidebar_chrome
+from views import (
+    show_frame,
+    collect_cleaning_options,
+    render_before_after,
+    render_export,
+    render_fuzzy_scan,
+    render_pre_apply_preview,
+    render_profile_picker,
+    render_quality_report,
+    render_recipe_editor,
 )
 
 st.set_page_config(
@@ -34,307 +38,51 @@ with st.sidebar:
 hero()
 
 
-def _score_caption(score: int) -> str:
-    if score >= 85:
-        return "Solid — only polish remaining."
-    if score >= 70:
-        return "Usable, but a few issues will bite you later."
-    if score >= 50:
-        return "Messy — cleaning will save you real time."
-    return "High risk — do not analyze this as-is."
-
-
-def render_quality_report(report: QualityReport) -> None:
-    section_header(
-        "02  ·  Diagnosis",
-        "Data quality report",
-        "This is the raw file, unchanged. Completeness 40%, uniqueness 30%, consistency 30%.",
-    )
-    quality_score_bento(
-        report.score,
-        _score_caption(report.score),
-        report.completeness,
-        report.uniqueness,
-        report.consistency,
-        report.exact_duplicate_rows,
-    )
-    note_cards(report.notes)
-
-    rows = []
-    for col in report.columns:
-        rows.append(
-            {
-                "column": col.name,
-                "looks like": col.inferred_role or "—",
-                "missing %": col.missing_pct,
-                "missing count": col.missing_count,
-                "empty / placeholder values": col.empty_string_count,
-                "date formats seen": ", ".join(col.date_formats) or "—",
-                "invalid emails": col.invalid_email_count,
-                "invalid phones": col.invalid_phone_count,
-            }
+def _commit_clean(
+    original: pd.DataFrame,
+    cleaned: pd.DataFrame,
+    log,
+    *,
+    replace_steps: bool,
+) -> None:
+    st.session_state["working"] = cleaned
+    st.session_state["cleaned"] = cleaned
+    st.session_state["original"] = original
+    st.session_state["log"] = log
+    if replace_steps:
+        st.session_state["applied_steps"] = list(log.steps)
+        st.session_state["has_advanced"] = False
+    else:
+        steps = list(st.session_state.get("applied_steps") or [])
+        steps.extend(log.steps)
+        st.session_state["applied_steps"] = steps
+        st.session_state["has_advanced"] = True
+    latest = dict(log.columns_renamed or {})
+    if replace_steps:
+        st.session_state["rename_map"] = latest
+    else:
+        st.session_state["rename_map"] = compose_rename_map(
+            st.session_state.get("rename_map") or {},
+            latest,
         )
-    st.caption("Column-by-column diagnosis")
-    st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+    st.session_state["_data_gen"] = int(st.session_state.get("_data_gen") or 0) + 1
 
 
-def render_fuzzy_scan(df: pd.DataFrame):
-    section_header(
-        "03  ·  Near-matches",
-        "Fuzzy duplicates",
-        "Exact copies are already in the score. This finds extra spaces, casing, and near-typos.",
-    )
-    scan = scan_fuzzy_duplicates(df)
-    if scan.skipped_columns:
-        st.info(
-            "Fuzzy matching was skipped for performance on columns with more "
-            "than 5,000 unique values: "
-            + ", ".join(scan.skipped_columns)
-        )
-    if not scan.scanned_columns:
-        st.info("No text columns were small enough to scan.")
-        return scan
-    if not scan.groups:
-        st.success("No near-duplicate groups found in the scanned text columns.")
-        return scan
+def apply_saved_recipe(saved: dict) -> None:
+    profile_id = saved.get("profile") if saved.get("profile") in PROFILE_BY_ID else "findings"
+    st.session_state["cleaning_profile"] = profile_id
+    st.session_state["_profile_token"] = f"{st.session_state.get('file_key')}:{profile_id}"
+    wanted = set(saved.get("fix_keys") or [])
+    for key in STEP_ORDER:
+        st.session_state[f"recipe_{key}"] = key in wanted
+    st.session_state["recipe_dayfirst"] = bool(saved.get("dayfirst"))
 
-    st.warning(f"Found {len(scan.groups)} near-duplicate group(s) to review.")
-    for group in scan.groups:
-        with st.expander(
-            f"{group.column}: {len(group.variants)} spellings → keep “{group.suggested}”"
-        ):
-            preview = pd.DataFrame(
-                {
-                    "value": group.variants,
-                    "rows": [group.counts[v] for v in group.variants],
-                    "suggested keep": [v == group.suggested for v in group.variants],
-                }
-            )
-            st.dataframe(preview, use_container_width=True, hide_index=True)
-            st.caption("Tick “Collapse near-duplicates” below to apply the suggested values.")
-    return scan
-
-
-def collect_cleaning_options(df: pd.DataFrame, has_fuzzy: bool) -> CleaningOptions:
-    section_header(
-        "04  ·  Operations",
-        "Cleaning steps",
-        "Tick what you trust. Nothing changes until you apply.",
-    )
-    options = CleaningOptions()
-
-    st.subheader("Duplicates")
-    options.drop_exact_duplicates = st.checkbox(
-        "Remove exact duplicate rows",
-        help="Keeps the first copy of each duplicated row.",
-    )
-    if options.drop_exact_duplicates:
-        options.duplicate_subset = st.multiselect(
-            "Compare duplicates using these columns only (optional)",
-            list(df.columns),
-            help="Leave empty to compare entire rows.",
-        ) or None
-    options.collapse_fuzzy = st.checkbox(
-        "Collapse near-duplicates to the suggested spelling",
-        disabled=not has_fuzzy,
-        help="Uses the fuzzy groups shown above.",
-    )
-
-    st.subheader("Text, dates, and numbers")
-    options.trim_whitespace = st.checkbox("Trim whitespace on text columns", value=True)
-    options.fix_dates = st.checkbox("Fix date-like columns (parse to datetime)")
-    if options.fix_dates:
-        options.dayfirst = st.checkbox(
-            "Dates are day-first (DD/MM/YYYY)",
-            help="Turn this on for most non-US date formats.",
-        )
-    options.casing = st.selectbox(
-        "Standardize text casing",
-        ["none", "title", "lower", "upper"],
-        format_func=lambda x: {
-            "none": "Leave casing as-is",
-            "title": "Title Case",
-            "lower": "lowercase",
-            "upper": "UPPERCASE",
-        }[x],
-    )
-    options.fix_emails = st.checkbox("Validate / fix emails (trim + lowercase)")
-    options.normalize_phones = st.checkbox("Normalize phone numbers")
-    if options.normalize_phones:
-        options.phone_format = st.radio(
-            "Phone format",
-            ["digits", "dashed"],
-            format_func=lambda x: "Digits only" if x == "digits" else "###-###-####",
-            horizontal=True,
-        )
-    options.strip_currency = st.checkbox(
-        "Strip currency symbols and commas from numbers ($1,234 → 1234)"
-    )
-
-    st.subheader("Missing values")
-    options.missing_strategy = st.selectbox(
-        "How to handle missing values",
-        ["leave", "drop_rows", "drop_columns", "fill"],
-        format_func=lambda x: {
-            "leave": "Leave missing values",
-            "drop_rows": "Remove rows that have any missing value",
-            "drop_columns": "Remove columns that are mostly missing",
-            "fill": "Fill missing values",
-        }[x],
-    )
-    if options.missing_strategy == "drop_columns":
-        options.missing_threshold_pct = st.slider(
-            "Drop column if missing % is at least",
-            min_value=10,
-            max_value=100,
-            value=100,
-        )
-    if options.missing_strategy == "fill":
-        options.numeric_fill = st.selectbox(
-            "Numeric columns",
-            ["none", "mean", "median"],
-            format_func=lambda x: {
-                "none": "Do not auto-fill numbers",
-                "mean": "Fill with mean",
-                "median": "Fill with median",
-            }[x],
-        )
-        options.fill_value = st.text_input(
-            "Fill other columns with this value (optional)",
-            placeholder="e.g. Unknown",
-        )
-
-    st.subheader("Columns and empty cells")
-    options.rename_style = st.selectbox(
-        "Rename columns",
-        ["none", "snake", "lower"],
-        format_func=lambda x: {
-            "none": "Keep names",
-            "snake": "lowercase with underscores",
-            "lower": "lowercase (keep spaces)",
-        }[x],
-    )
-    with st.expander("Manual column renames"):
-        manual = {}
-        for col in df.columns:
-            new = st.text_input(f"{col}", value=str(col), key=f"rename_{col}")
-            if new.strip() and new.strip() != str(col):
-                manual[col] = new.strip()
-        options.manual_renames = manual
-    options.drop_empty_columns = st.checkbox("Remove completely empty columns")
-    options.drop_empty_rows = st.checkbox("Remove completely empty rows")
-    return options
-
-
-def render_pre_apply_preview(df: pd.DataFrame, options: CleaningOptions) -> None:
-    st.caption("What will change — a dry look. Nothing is applied yet.")
-    if options.drop_exact_duplicates:
-        dupes = preview_duplicate_rows(df, options.duplicate_subset)
-        st.write(f"Exact duplicate rows that would be dropped: **{len(dupes):,}**")
-        if not dupes.empty:
-            st.dataframe(dupes.head(50), use_container_width=True)
-            if len(dupes) > 50:
-                st.caption(f"Showing first 50 of {len(dupes):,}.")
-    if options.drop_empty_columns:
-        empty_cols = [c for c in df.columns if df[c].isna().all()]
-        st.write(
-            "Empty columns that would be removed: "
-            + (", ".join(map(str, empty_cols)) if empty_cols else "none")
-        )
-    if options.drop_empty_rows:
-        empty_rows = int(df.isna().all(axis=1).sum())
-        st.write(f"Completely empty rows that would be removed: **{empty_rows:,}**")
-    if options.collapse_fuzzy:
-        st.write("Near-duplicates will be collapsed to the suggested values shown above.")
-    if options.missing_strategy == "drop_rows":
-        st.write(
-            f"Rows with any missing value that would be removed: **{int(df.isna().any(axis=1).sum()):,}**"
-        )
-
-
-def render_before_after(original: pd.DataFrame, cleaned: pd.DataFrame, log) -> None:
-    section_header(
-        "05  ·  Receipt",
-        "Before vs after",
-        "Proof of what changed — then download the cleaned table.",
-    )
-    after_report = build_quality_report(cleaned)
-    bento_tiles(
-        [
-            ("era-tile-lg", "Rows", f"{log.rows_after:,}", f"Was {log.rows_before:,}"),
-            ("era-tile", "Columns", f"{log.cols_after:,}", f"Was {log.cols_before:,}"),
-            ("era-tile", "Score after", f"{after_report.score}/100", "Quality on the cleaned table"),
-        ]
-    )
-    st.caption("Change summary")
-    st.dataframe(pd.DataFrame(log.as_rows()), use_container_width=True, hide_index=True)
-    note_cards(log.steps)
-
-    before_tab, after_tab = st.tabs(["Before", "After"])
-    with before_tab:
-        st.caption(f"{len(original):,} rows × {len(original.columns):,} columns")
-        st.dataframe(original, use_container_width=True)
-    with after_tab:
-        st.caption(f"{len(cleaned):,} rows × {len(cleaned.columns):,} columns")
-        st.dataframe(cleaned, use_container_width=True)
-
-
-def _excel_bytes(df: pd.DataFrame) -> bytes:
-    buffer = io.BytesIO()
-    with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
-        df.to_excel(writer, index=False, sheet_name="cleaned")
-    return buffer.getvalue()
-
-
-def render_export(cleaned: pd.DataFrame, log) -> None:
-    section_header(
-        "06  ·  Deliverable",
-        "Export",
-        "The cleaned table, plus a small change log you can keep as proof.",
-    )
-    csv_data = cleaned.to_csv(index=False).encode("utf-8")
-    excel_data = _excel_bytes(cleaned)
-    summary_text = log.as_text()
-    summary_csv = pd.DataFrame(log.as_rows()).to_csv(index=False).encode("utf-8")
-
-    c1, c2, c3 = st.columns(3)
-    with c1:
-        st.download_button(
-            "Download CSV  ↗",
-            data=csv_data,
-            file_name="cleaned_data.csv",
-            mime="text/csv",
-            use_container_width=True,
-        )
-    with c2:
-        st.download_button(
-            "Download Excel  ↗",
-            data=excel_data,
-            file_name="cleaned_data.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            use_container_width=True,
-        )
-    with c3:
-        st.download_button(
-            "Summary (txt)  ↗",
-            data=summary_text,
-            file_name="cleaning_summary.txt",
-            mime="text/plain",
-            use_container_width=True,
-        )
-    st.download_button(
-        "Summary (CSV)  ↗",
-        data=summary_csv,
-        file_name="cleaning_summary.csv",
-        mime="text/csv",
-        use_container_width=True,
-    )
 
 
 section_header(
-    "01  ·  Intake",
-    "Upload your data",
-    "CSV or Excel. Several files can be stacked into one table.",
+    "01  ·  Upload",
+    "Add your spreadsheet",
+    "CSV or Excel. Several files can be stacked if they are the same kind of table.",
 )
 
 uploads = st.file_uploader(
@@ -346,15 +94,18 @@ uploads = st.file_uploader(
 )
 
 if not uploads:
-    st.info("Start by dropping a spreadsheet. The quality score appears before anything is cleaned.")
+    st.info("Drop a spreadsheet to begin. We score it before anything is cleaned.")
     st.stop()
 
 frames: dict[str, pd.DataFrame] = {}
+fingerprints: dict[str, str] = {}
 errors: list[str] = []
 
 for uploaded in uploads:
     try:
-        frames[uploaded.name] = read_uploaded_file(uploaded)
+        label = unique_upload_name(uploaded.name, set(frames))
+        fingerprints[label] = fingerprint_bytes(uploaded.getvalue())
+        frames[label] = read_uploaded_file(uploaded)
     except FileReadError as exc:
         errors.append(str(exc))
 
@@ -362,21 +113,21 @@ for message in errors:
     st.error(message)
 
 if not frames:
-    st.warning("No readable files yet. Fix the errors above or try another file.")
+    st.warning("Nothing readable yet. Fix the errors above, or try another file.")
     st.stop()
 
 names = list(frames.keys())
 merge = False
 if len(frames) > 1:
     merge = st.checkbox(
-        "Merge files (stack rows into one table)",
-        help="Use this when each file is the same kind of table.",
+        "Combine files into one table",
+        help="Use this when each file is the same kind of table, stacked as extra rows.",
     )
     header_sets = [tuple(map(str, f.columns)) for f in frames.values()]
     if merge and len(set(header_sets)) > 1:
         st.warning(
-            "Column headers differ between files. The merge will line up "
-            "matching names and leave blanks where a file is missing a column."
+            "Column names differ between files. Matching names line up; "
+            "a blank is left where a file is missing a column."
         )
         with st.expander("Headers in each file"):
             for name, cols in zip(frames.keys(), header_sets):
@@ -385,40 +136,168 @@ if len(frames) > 1:
 if merge:
     df, _headers_differ = merge_frames(frames)
     selected = "(merged)"
+    content_fp = fingerprint_bytes("|".join(fingerprints[n] for n in names).encode())
 else:
-    selected = names[0] if len(names) == 1 else st.selectbox("Working file", names)
+    selected = names[0] if len(names) == 1 else st.selectbox("File to inspect", names)
     df = frames[selected]
-file_key = f"{selected}:{len(df)}:{tuple(df.columns)}"
+    content_fp = fingerprints[selected]
+file_key = f"{selected}:{len(df)}:{tuple(map(str, df.columns))}:{content_fp}"
 if st.session_state.get("file_key") != file_key:
     st.session_state["file_key"] = file_key
+    st.session_state["source"] = df.copy()
+    st.session_state["working"] = df.copy()
+    st.session_state["applied_steps"] = []
+    st.session_state["has_advanced"] = False
+    st.session_state["_data_gen"] = 0
+    st.session_state["rename_map"] = {}
     st.session_state.pop("cleaned", None)
     st.session_state.pop("log", None)
     st.session_state.pop("original", None)
+    st.session_state.pop("fuzzy_selected", None)
+    st.session_state.pop("fuzzy_skipped_last", None)
+    st.session_state.pop("_diag_sig", None)
+    st.session_state.pop("_fuzzy_scan", None)
+    st.session_state.pop("_quality", None)
+    st.session_state.pop("_export_sig", None)
+    st.session_state.pop("_export", None)
+    st.session_state.pop("_receipt_sig", None)
+    st.session_state.pop("_receipt", None)
+    st.session_state.pop("_recipe_upload_digest", None)
+    if st.session_state.get("saved_recipe"):
+        st.session_state["_offer_last_recipe"] = True
+
+source = st.session_state.get("source", df)
+working = st.session_state.get("working", df)
 
 section_header(
-    "Receipt",
-    f"Preview — {selected}",
-    f"{len(df):,} rows × {len(df.columns):,} columns in the working table.",
+    "Table",
+    selected,
+    f"{len(working):,} rows × {len(working.columns):,} columns. This is the current working copy.",
 )
-st.dataframe(df, use_container_width=True)
+show_frame(working)
 
-render_quality_report(build_quality_report(df))
-fuzzy_scan = render_fuzzy_scan(df)
-has_fuzzy = bool(fuzzy_scan and fuzzy_scan.groups)
+prefix = str(st.session_state.get("file_key", ""))
+force_columns = {
+    col
+    for col in (st.session_state.get("fuzzy_skipped_last") or [])
+    if st.session_state.get(f"fuzzy_force_{prefix}_{col}")
+}
+diag_sig = (prefix, int(st.session_state.get("_data_gen") or 0), frozenset(force_columns))
+if st.session_state.get("_diag_sig") != diag_sig:
+    st.session_state["_fuzzy_scan"] = scan_fuzzy_duplicates(
+        working, force_columns=force_columns
+    )
+    st.session_state["_quality"] = build_quality_report(working)
+    st.session_state["_diag_sig"] = diag_sig
+fuzzy_scan = st.session_state["_fuzzy_scan"]
+st.session_state["fuzzy_skipped_last"] = list(fuzzy_scan.skipped_columns)
+findings = render_quality_report(
+    working,
+    st.session_state["_quality"],
+    fuzzy_scan,
+    current_copy=st.session_state.get("cleaned") is not None,
+)
+fuzzy_selected = render_fuzzy_scan(fuzzy_scan)
+has_fuzzy = bool(fuzzy_selected)
 
-options = collect_cleaning_options(df, has_fuzzy)
-render_pre_apply_preview(df, options)
+section_header(
+    "04  ·  Plan",
+    "Choose what to fix",
+    "Start from the findings or a named profile. Turn off any step you do not want, then apply.",
+)
+profile = render_profile_picker()
+recipe = build_recipe(findings, force_keys=profile.fix_keys)
+saved = st.session_state.get("saved_recipe")
+if st.session_state.get("_offer_last_recipe") and saved:
+    last_line = recipe_line(recipe, saved.get("fix_keys") or [])
+    offer_l, offer_r = st.columns([0.72, 0.28])
+    with offer_l:
+        st.info(f"Last plan, from the previous file: {last_line}")
+    with offer_r:
+        if st.button("Use last plan", use_container_width=True):
+            apply_saved_recipe(saved)
+            st.session_state["_offer_last_recipe"] = False
+            st.rerun()
+included_keys, recipe_dayfirst = render_recipe_editor(recipe, profile)
 
-if st.button("Apply cleaning", type="primary"):
-    cleaned, log = apply_cleaning(df, options)
-    st.session_state["cleaned"] = cleaned
-    st.session_state["log"] = log
-    st.session_state["original"] = df
-    st.success("Cleaning applied. Review the before/after below.")
+save_l, save_r = st.columns(2)
+with save_l:
+    st.download_button(
+        "Save this plan  ↗",
+        data=recipe_to_json(profile.id, included_keys, recipe_dayfirst),
+        file_name="cleaning_recipe.json",
+        mime="application/json",
+        disabled=not included_keys,
+        use_container_width=True,
+        help="Open this JSON on next month’s file to tick the same steps.",
+    )
+with save_r:
+    recipe_upload = st.file_uploader(
+        "Or load a saved plan (JSON)",
+        type=["json"],
+        key="recipe_json_upload",
+    )
+    load_plan = st.button(
+        "Load plan",
+        disabled=recipe_upload is None,
+        use_container_width=True,
+    )
+if recipe_upload is not None and load_plan:
+    raw = recipe_upload.getvalue()
+    digest = fingerprint_bytes(raw)
+    if st.session_state.get("_recipe_upload_digest") == digest:
+        st.info("That plan is already loaded.")
+    else:
+        try:
+            loaded = recipe_from_json(raw)
+        except (ValueError, UnicodeDecodeError) as exc:
+            st.error(f"Could not read that plan file. {exc}")
+        else:
+            apply_saved_recipe(loaded)
+            st.session_state["saved_recipe"] = loaded
+            st.session_state["_recipe_upload_digest"] = digest
+            st.rerun()
+
+if st.session_state.get("has_advanced"):
+    st.warning(
+        "Apply this plan starts from the original file. "
+        "Advanced changes on the working copy will be discarded."
+    )
+if st.button("Apply this plan", type="primary", disabled=not included_keys):
+    plan = options_from_fix_keys(
+        included_keys,
+        dayfirst=recipe_dayfirst,
+        fuzzy_groups=st.session_state.get("fuzzy_selected"),
+    )
+    cleaned, log = apply_cleaning(source, plan)
+    _commit_clean(source, cleaned, log, replace_steps=True)
+    st.session_state["saved_recipe"] = recipe_payload(
+        profile.id, included_keys, recipe_dayfirst
+    )
+    st.session_state["_offer_last_recipe"] = False
+    st.success("Plan applied from the original file. Check the score change below.")
+    st.rerun()
+
+options = collect_cleaning_options(working, has_fuzzy)
+render_pre_apply_preview(working, options)
+
+if st.button("Apply advanced tools"):
+    if options.collapse_fuzzy and options.fuzzy_groups is None:
+        options.fuzzy_groups = st.session_state.get("fuzzy_selected")
+    cleaned, log = apply_cleaning(working, options)
+    _commit_clean(source, cleaned, log, replace_steps=False)
+    st.success("Advanced tools applied. Check before and after below.")
+    st.rerun()
 
 cleaned = st.session_state.get("cleaned")
 log = st.session_state.get("log")
 original = st.session_state.get("original")
 if cleaned is not None and log is not None and original is not None:
     render_before_after(original, cleaned, log)
-    render_export(cleaned, log)
+    render_export(
+        cleaned,
+        log,
+        original,
+        selected,
+        remaining_findings=len(findings),
+    )
