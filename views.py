@@ -389,6 +389,19 @@ def _receipt_reports(original: pd.DataFrame, cleaned: pd.DataFrame) -> tuple[Qua
     return st.session_state["_receipt"]
 
 
+def _journey_log(original: pd.DataFrame, cleaned: pd.DataFrame, log):
+    """One log for Result + certificate: original → current, all applied steps."""
+    steps = list(st.session_state.get("applied_steps") or log.steps)
+    return replace(
+        log,
+        rows_before=len(original),
+        rows_after=len(cleaned),
+        cols_before=len(original.columns),
+        cols_after=len(cleaned.columns),
+        steps=steps,
+    )
+
+
 def render_before_after(original: pd.DataFrame, cleaned: pd.DataFrame, log) -> None:
     section_header(
         "05  ·  Result",
@@ -396,6 +409,7 @@ def render_before_after(original: pd.DataFrame, cleaned: pd.DataFrame, log) -> N
         "The score before the plan, then after. This is the screenshot to send.",
     )
     before, after = _receipt_reports(original, cleaned)
+    log = _journey_log(original, cleaned, log)
     delta = after.score - before.score
     sign = f"+{delta}" if delta > 0 else str(delta)
     quality_score_bento(
@@ -450,17 +464,10 @@ def render_export(
         "The clean table, plus a certificate: the score, every step, and a sample of what changed.",
     )
     before, after = _receipt_reports(original, cleaned)
-    steps = tuple(st.session_state.get("applied_steps") or [])
+    cert_log = _journey_log(original, cleaned, log)
+    steps = tuple(cert_log.steps)
     export_sig = (id(cleaned), id(original), remaining_findings, steps, source_name)
     if st.session_state.get("_export_sig") != export_sig:
-        cert_log = replace(
-            log,
-            rows_before=len(original),
-            rows_after=len(cleaned),
-            cols_before=len(original.columns),
-            cols_after=len(cleaned.columns),
-            steps=list(steps or log.steps),
-        )
         cert = build_certificate(
             source_name=source_name,
             original=original,
@@ -479,7 +486,7 @@ def render_export(
             "excel": excel_data,
             "pdf": pdf_data,
             "summary_text": cert.as_text(),
-            "summary_csv": pd.DataFrame(log.as_rows()).to_csv(index=False).encode("utf-8"),
+            "summary_csv": pd.DataFrame(cert_log.as_rows()).to_csv(index=False).encode("utf-8"),
             "pack": build_handoff_zip(excel_bytes=excel_data, pdf_bytes=pdf_data),
         }
         st.session_state["_export_sig"] = export_sig
