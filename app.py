@@ -57,6 +57,7 @@ def _commit_clean(
         steps.extend(log.steps)
         st.session_state["applied_steps"] = steps
         st.session_state["has_advanced"] = True
+    st.session_state["_data_gen"] = int(st.session_state.get("_data_gen") or 0) + 1
 
 
 def apply_saved_recipe(saved: dict) -> None:
@@ -138,6 +139,7 @@ if st.session_state.get("file_key") != file_key:
     st.session_state["working"] = df.copy()
     st.session_state["applied_steps"] = []
     st.session_state["has_advanced"] = False
+    st.session_state["_data_gen"] = 0
     st.session_state.pop("cleaned", None)
     st.session_state.pop("log", None)
     st.session_state.pop("original", None)
@@ -170,7 +172,7 @@ force_columns = {
     for col in (st.session_state.get("fuzzy_skipped_last") or [])
     if st.session_state.get(f"fuzzy_force_{prefix}_{col}")
 }
-diag_sig = (prefix, id(working), frozenset(force_columns))
+diag_sig = (prefix, int(st.session_state.get("_data_gen") or 0), frozenset(force_columns))
 if st.session_state.get("_diag_sig") != diag_sig:
     st.session_state["_fuzzy_scan"] = scan_fuzzy_duplicates(
         working, force_columns=force_columns

@@ -423,7 +423,7 @@ def render_pre_apply_preview(df: pd.DataFrame, options: CleaningOptions) -> None
 
 
 def _receipt_reports(original: pd.DataFrame, cleaned: pd.DataFrame) -> tuple[QualityReport, QualityReport]:
-    sig = (id(original), id(cleaned))
+    sig = int(st.session_state.get("_data_gen") or 0)
     if st.session_state.get("_receipt_sig") != sig:
         st.session_state["_receipt"] = (
             build_quality_report(original),
@@ -510,7 +510,12 @@ def render_export(
     before, after = _receipt_reports(original, cleaned)
     cert_log = _journey_log(original, cleaned, log)
     steps = tuple(cert_log.steps)
-    export_sig = (id(cleaned), id(original), remaining_findings, steps, source_name)
+    export_sig = (
+        int(st.session_state.get("_data_gen") or 0),
+        remaining_findings,
+        steps,
+        source_name,
+    )
     if st.session_state.get("_export_sig") != export_sig:
         cert = build_certificate(
             source_name=source_name,
