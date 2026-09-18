@@ -191,7 +191,12 @@ if st.session_state.get("_diag_sig") != diag_sig:
     st.session_state["_diag_sig"] = diag_sig
 fuzzy_scan = st.session_state["_fuzzy_scan"]
 st.session_state["fuzzy_skipped_last"] = list(fuzzy_scan.skipped_columns)
-findings = render_quality_report(working, st.session_state["_quality"], fuzzy_scan)
+findings = render_quality_report(
+    working,
+    st.session_state["_quality"],
+    fuzzy_scan,
+    current_copy=st.session_state.get("cleaned") is not None,
+)
 fuzzy_selected = render_fuzzy_scan(fuzzy_scan)
 has_fuzzy = bool(fuzzy_selected)
 

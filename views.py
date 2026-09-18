@@ -46,12 +46,25 @@ def _score_caption(score: int) -> str:
     return "High risk. Do not analyze this as-is."
 
 
-def render_quality_report(df: pd.DataFrame, report: QualityReport, fuzzy_scan) -> list[Finding]:
-    section_header(
-        "02  ·  Score",
-        "What we found",
-        "The score is the headline. The cards below explain it.",
-    )
+def render_quality_report(
+    df: pd.DataFrame,
+    report: QualityReport,
+    fuzzy_scan,
+    *,
+    current_copy: bool = False,
+) -> list[Finding]:
+    if current_copy:
+        section_header(
+            "02  ·  Score",
+            "Current working copy",
+            "This is the table after cleaning, not the original file. Remaining issues are below. Before and after is in Result.",
+        )
+    else:
+        section_header(
+            "02  ·  Score",
+            "What we found",
+            "The score is the headline. The cards below explain it.",
+        )
     findings = collect_findings(df, report, fuzzy_scan)
     high = sum(1 for f in findings if f.severity == "high")
     caption = _score_caption(report.score)
