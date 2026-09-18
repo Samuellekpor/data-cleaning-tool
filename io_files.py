@@ -83,7 +83,8 @@ _FORMULA_PREFIXES = frozenset("=+-@\t\r")
 def _neutralize_cell(value):
     if not isinstance(value, str) or not value:
         return value
-    if value[0] in _FORMULA_PREFIXES:
+    lead = value.lstrip(" \t\r\n")
+    if lead and lead[0] in _FORMULA_PREFIXES:
         return "'" + value
     return value
 
