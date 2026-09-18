@@ -38,14 +38,25 @@ with st.sidebar:
 hero()
 
 
-def _commit_clean(original: pd.DataFrame, cleaned: pd.DataFrame, log) -> None:
+def _commit_clean(
+    original: pd.DataFrame,
+    cleaned: pd.DataFrame,
+    log,
+    *,
+    replace_steps: bool,
+) -> None:
     st.session_state["working"] = cleaned
     st.session_state["cleaned"] = cleaned
     st.session_state["original"] = original
     st.session_state["log"] = log
-    steps = list(st.session_state.get("applied_steps") or [])
-    steps.extend(log.steps)
-    st.session_state["applied_steps"] = steps
+    if replace_steps:
+        st.session_state["applied_steps"] = list(log.steps)
+        st.session_state["has_advanced"] = False
+    else:
+        steps = list(st.session_state.get("applied_steps") or [])
+        steps.extend(log.steps)
+        st.session_state["applied_steps"] = steps
+        st.session_state["has_advanced"] = True
 
 
 def apply_saved_recipe(saved: dict) -> None:
@@ -126,6 +137,7 @@ if st.session_state.get("file_key") != file_key:
     st.session_state["source"] = df.copy()
     st.session_state["working"] = df.copy()
     st.session_state["applied_steps"] = []
+    st.session_state["has_advanced"] = False
     st.session_state.pop("cleaned", None)
     st.session_state.pop("log", None)
     st.session_state.pop("original", None)
@@ -221,6 +233,11 @@ if recipe_upload is not None:
             st.session_state["_recipe_upload_digest"] = digest
             st.rerun()
 
+if st.session_state.get("has_advanced"):
+    st.warning(
+        "Apply this plan starts from the original file. "
+        "Advanced changes on the working copy will be discarded."
+    )
 if st.button("Apply this plan", type="primary", disabled=not included_keys):
     plan = options_from_fix_keys(
         included_keys,
@@ -228,7 +245,7 @@ if st.button("Apply this plan", type="primary", disabled=not included_keys):
         fuzzy_groups=st.session_state.get("fuzzy_selected"),
     )
     cleaned, log = apply_cleaning(source, plan)
-    _commit_clean(source, cleaned, log)
+    _commit_clean(source, cleaned, log, replace_steps=True)
     st.session_state["saved_recipe"] = recipe_payload(
         profile.id, included_keys, recipe_dayfirst
     )
@@ -243,7 +260,7 @@ if st.button("Apply advanced tools"):
     if options.collapse_fuzzy and options.fuzzy_groups is None:
         options.fuzzy_groups = st.session_state.get("fuzzy_selected")
     cleaned, log = apply_cleaning(working, options)
-    _commit_clean(source, cleaned, log)
+    _commit_clean(source, cleaned, log, replace_steps=False)
     st.success("Advanced tools applied. Check before and after below.")
     st.rerun()
 
