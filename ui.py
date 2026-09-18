@@ -8,6 +8,7 @@ EXCEL_REPORT_AUTOMATOR_URL = "https://github.com/Samuellekpor/excel-report-autom
 
 _SEV_TOKENS = frozenset({"high", "medium", "low"})
 _PILLAR_TOKENS = frozenset({"completeness", "uniqueness", "consistency"})
+_TILE_TOKENS = frozenset({"era-tile", "era-tile-lg", "era-tile-sm", "era-tile-xl"})
 
 
 def _css_token(value: str | None, allowed: frozenset[str], fallback: str) -> str:
@@ -612,9 +613,10 @@ def sidebar_chrome() -> None:
 def bento_tiles(specs: list[tuple[str, str, str, str]]) -> None:
     html = ['<div class="era-bento">']
     for cls, kicker, value, hint in specs:
+        tile = _css_token(cls, _TILE_TOKENS, "era-tile")
         html.append(
             f"""
-            <div class="{cls}">
+            <div class="{tile}">
               <div class="era-shell">
                 <div class="era-core">
                   <div class="era-kicker">{escape(kicker)}</div>
