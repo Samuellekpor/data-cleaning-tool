@@ -14,7 +14,21 @@ class FileReadError(Exception):
     """Raised when an upload cannot be parsed as a table."""
 
 
-def fingerprint_bytes(data: bytes) -> str:
+def unique_upload_name(name: str, taken: set[str]) -> str:
+    """Keep two files named data.csv as data.csv and data.csv (2)."""
+    if name not in taken:
+        return name
+    if "." in name and not name.startswith("."):
+        stem, ext = name.rsplit(".", 1)
+        suffix = f".{ext}"
+    else:
+        stem, suffix = name, ""
+    i = 2
+    while True:
+        candidate = f"{stem} ({i}){suffix}"
+        if candidate not in taken:
+            return candidate
+        i += 1
     """Short content hash so a same-shaped replacement file still resets session."""
     return hashlib.sha256(data).hexdigest()[:16]
 

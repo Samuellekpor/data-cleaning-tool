@@ -5,7 +5,7 @@ import streamlit as st
 
 from cleaning import apply_cleaning, options_from_fix_keys
 from fuzzy import scan_fuzzy_duplicates
-from io_files import FileReadError, fingerprint_bytes, merge_frames, read_uploaded_file
+from io_files import FileReadError, fingerprint_bytes, merge_frames, read_uploaded_file, unique_upload_name
 from profiles import PROFILE_BY_ID
 from quality import build_quality_report
 from recipe import STEP_ORDER, build_recipe, recipe_line
@@ -95,8 +95,9 @@ errors: list[str] = []
 
 for uploaded in uploads:
     try:
-        fingerprints[uploaded.name] = fingerprint_bytes(uploaded.getvalue())
-        frames[uploaded.name] = read_uploaded_file(uploaded)
+        label = unique_upload_name(uploaded.name, set(frames))
+        fingerprints[label] = fingerprint_bytes(uploaded.getvalue())
+        frames[label] = read_uploaded_file(uploaded)
     except FileReadError as exc:
         errors.append(str(exc))
 
