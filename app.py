@@ -150,6 +150,7 @@ if st.session_state.get("file_key") != file_key:
     st.session_state.pop("_export", None)
     st.session_state.pop("_receipt_sig", None)
     st.session_state.pop("_receipt", None)
+    st.session_state.pop("_recipe_upload_digest", None)
     if st.session_state.get("saved_recipe"):
         st.session_state["_offer_last_recipe"] = True
 
@@ -219,10 +220,17 @@ with save_r:
         type=["json"],
         key="recipe_json_upload",
     )
-if recipe_upload is not None:
+    load_plan = st.button(
+        "Load plan",
+        disabled=recipe_upload is None,
+        use_container_width=True,
+    )
+if recipe_upload is not None and load_plan:
     raw = recipe_upload.getvalue()
     digest = fingerprint_bytes(raw)
-    if st.session_state.get("_recipe_upload_digest") != digest:
+    if st.session_state.get("_recipe_upload_digest") == digest:
+        st.info("That plan is already loaded.")
+    else:
         try:
             loaded = recipe_from_json(raw)
         except (ValueError, UnicodeDecodeError) as exc:
