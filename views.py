@@ -436,6 +436,7 @@ def _receipt_reports(original: pd.DataFrame, cleaned: pd.DataFrame) -> tuple[Qua
 def _journey_log(original: pd.DataFrame, cleaned: pd.DataFrame, log):
     """One log for Result + certificate: original → current, all applied steps."""
     steps = list(st.session_state.get("applied_steps") or log.steps)
+    renamed = dict(st.session_state.get("rename_map") or log.columns_renamed)
     return replace(
         log,
         rows_before=len(original),
@@ -443,6 +444,7 @@ def _journey_log(original: pd.DataFrame, cleaned: pd.DataFrame, log):
         cols_before=len(original.columns),
         cols_after=len(cleaned.columns),
         steps=steps,
+        columns_renamed=renamed,
     )
 
 

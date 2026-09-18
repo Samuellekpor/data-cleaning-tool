@@ -15,7 +15,7 @@ class FileReadError(Exception):
 
 
 def unique_upload_name(name: str, taken: set[str]) -> str:
-    """Keep two files named data.csv as data.csv and data.csv (2)."""
+    """Keep two files named data.csv as data.csv and data (2).csv."""
     if name not in taken:
         return name
     if "." in name and not name.startswith("."):

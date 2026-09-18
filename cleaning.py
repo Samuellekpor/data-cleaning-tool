@@ -91,6 +91,20 @@ class ChangeLog:
         return "\n".join(lines) + "\n"
 
 
+def compose_rename_map(prior: dict[str, str], latest: dict[str, str]) -> dict[str, str]:
+    """Chain original → current with current → next into original → final."""
+    prior = {str(a): str(b) for a, b in (prior or {}).items() if a != b}
+    latest = {str(a): str(b) for a, b in (latest or {}).items() if a != b}
+    composed: dict[str, str] = {}
+    prior_current = set(prior.values())
+    for orig, cur in prior.items():
+        composed[orig] = latest.get(cur, cur)
+    for cur, new in latest.items():
+        if cur not in prior and cur not in prior_current:
+            composed[cur] = new
+    return {a: b for a, b in composed.items() if a != b}
+
+
 def _text_columns(df: pd.DataFrame) -> list[str]:
     return [
         c

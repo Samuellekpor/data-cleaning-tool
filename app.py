@@ -3,7 +3,7 @@ from __future__ import annotations
 import pandas as pd
 import streamlit as st
 
-from cleaning import apply_cleaning, options_from_fix_keys
+from cleaning import apply_cleaning, compose_rename_map, options_from_fix_keys
 from fuzzy import scan_fuzzy_duplicates
 from io_files import FileReadError, fingerprint_bytes, merge_frames, read_uploaded_file, unique_upload_name
 from profiles import PROFILE_BY_ID
@@ -57,6 +57,14 @@ def _commit_clean(
         steps.extend(log.steps)
         st.session_state["applied_steps"] = steps
         st.session_state["has_advanced"] = True
+    latest = dict(log.columns_renamed or {})
+    if replace_steps:
+        st.session_state["rename_map"] = latest
+    else:
+        st.session_state["rename_map"] = compose_rename_map(
+            st.session_state.get("rename_map") or {},
+            latest,
+        )
     st.session_state["_data_gen"] = int(st.session_state.get("_data_gen") or 0) + 1
 
 
@@ -141,6 +149,7 @@ if st.session_state.get("file_key") != file_key:
     st.session_state["applied_steps"] = []
     st.session_state["has_advanced"] = False
     st.session_state["_data_gen"] = 0
+    st.session_state["rename_map"] = {}
     st.session_state.pop("cleaned", None)
     st.session_state.pop("log", None)
     st.session_state.pop("original", None)
