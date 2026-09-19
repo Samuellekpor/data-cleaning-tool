@@ -6,6 +6,15 @@ import streamlit as st
 
 EXCEL_REPORT_AUTOMATOR_URL = "https://github.com/Samuellekpor/excel-report-automator"
 
+_SEV_TOKENS = frozenset({"high", "medium", "low"})
+_PILLAR_TOKENS = frozenset({"completeness", "uniqueness", "consistency"})
+_TILE_TOKENS = frozenset({"era-tile", "era-tile-lg", "era-tile-sm", "era-tile-xl"})
+
+
+def _css_token(value: str | None, allowed: frozenset[str], fallback: str) -> str:
+    token = (value or "").strip().lower()
+    return token if token in allowed else fallback
+
 FONTS = """
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -486,11 +495,41 @@ CSS = r"""
 
   .era-steps b { color: var(--era-teal); font-family: "Syne", sans-serif; font-weight: 600; }
 
-  .era-note {
+  .era-sev {
+    display: inline-flex;
+    align-items: center;
+    border-radius: 0.4rem;
+    padding: 0.12rem 0.45rem;
+    font-size: 9px;
+    font-weight: 600;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+  }
+
+  .era-sev-high {
+    color: #F3C1A0;
+    background: rgba(243,193,160,0.12);
+    border: 1px solid rgba(243,193,160,0.28);
+  }
+
+  .era-sev-medium {
+    color: var(--era-teal);
+    background: rgba(228,179,99,0.10);
+    border: 1px solid rgba(228,179,99,0.22);
+  }
+
+  .era-sev-low {
     color: var(--era-muted);
-    font-size: 0.88rem;
-    line-height: 1.55;
-    margin-bottom: 1rem;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid var(--era-hair);
+  }
+
+  .era-finding-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+    margin-bottom: 0.65rem;
+    align-items: center;
   }
 
   @keyframes era-enter {
@@ -531,18 +570,18 @@ def hero() -> None:
         """
         <div class="era-hero">
           <div>
-            <div class="era-eyebrow">Quality inspector · no silent fixes</div>
-            <h1>Find what the<br>spreadsheet hides.</h1>
+            <div class="era-eyebrow">Inspect first · change nothing yet</div>
+            <h1>See what’s wrong<br>before you clean.</h1>
             <p class="era-lede">
-              Upload messy files. We diagnose missingness, duplicates, dates,
-              and near-matches you would never catch by eye — then score the
-              damage before a single cell is changed.
+              Upload a messy file. We flag empty cells, duplicate rows, mixed dates,
+              and names written more than one way — then score the file before
+              a single cell is changed.
             </p>
           </div>
           <div class="era-hero-aside">
-            <strong>What you leave with.</strong><br>
-            A quality score, reviewable cleaning steps, before/after proof,
-            and a cleaned table ready for the Excel Report Automator.
+            <strong>What you take away.</strong><br>
+            A quality score, a plan you can edit, a certificate of what changed,
+            and a clean table ready to brief.
           </div>
         </div>
         """,
@@ -553,15 +592,15 @@ def hero() -> None:
 def sidebar_chrome() -> None:
     st.markdown(
         f"""
-        <div class="era-eyebrow">Protocol</div>
-        <div class="era-side-title">How this works</div>
+        <div class="era-eyebrow">How it works</div>
+        <div class="era-side-title">Four steps</div>
         <ol class="era-steps">
-          <li><b>01</b><span>Drop .xlsx, .xls, or .csv — several files are fine</span></li>
-          <li><b>02</b><span>Read the quality score first. Nothing has been cleaned yet</span></li>
-          <li><b>03</b><span>Review fuzzy groups, tick the steps you trust</span></li>
-          <li><b>04</b><span>Apply, compare before/after, then export</span></li>
+          <li><b>01</b><span>Upload CSV or Excel. Several files are fine.</span></li>
+          <li><b>02</b><span>Read the score and the findings. Nothing is cleaned yet.</span></li>
+          <li><b>03</b><span>Tick the fixes you want. Skip the rest.</span></li>
+          <li><b>04</b><span>Apply, then download the clean file and the certificate.</span></li>
         </ol>
-        <p class="era-note">Need a polished briefing from the cleaned table?</p>
+        <p class="era-note">Need a written briefing from the clean table?</p>
         <a class="era-cta" href="{EXCEL_REPORT_AUTOMATOR_URL}">
           Excel Report Automator
           <span class="era-cta-icon">↗</span>
@@ -574,9 +613,10 @@ def sidebar_chrome() -> None:
 def bento_tiles(specs: list[tuple[str, str, str, str]]) -> None:
     html = ['<div class="era-bento">']
     for cls, kicker, value, hint in specs:
+        tile = _css_token(cls, _TILE_TOKENS, "era-tile")
         html.append(
             f"""
-            <div class="{cls}">
+            <div class="{tile}">
               <div class="era-shell">
                 <div class="era-core">
                   <div class="era-kicker">{escape(kicker)}</div>
@@ -598,16 +638,44 @@ def quality_score_bento(
     uniqueness: float,
     consistency: float,
     duplicates: int,
+    *,
+    after_score: int | None = None,
+    after_completeness: float | None = None,
+    after_uniqueness: float | None = None,
+    after_consistency: float | None = None,
+    after_duplicates: int | None = None,
 ) -> None:
-    width = max(0.0, min(100.0, float(score)))
+    def _pair(before: float | int, after: float | int | None, as_int: bool = True) -> str:
+        if after is None:
+            return f"{int(before)}" if as_int else f"{before:.0f}"
+        left = int(before) if as_int else f"{before:.0f}"
+        right = int(after) if as_int else f"{after:.0f}"
+        return f"{left}<span style=\"font-size:0.45em;letter-spacing:-0.02em;color:rgba(246,240,230,0.45)\"> → </span>{right}"
+
+    headline = score if after_score is None else after_score
+    width = max(0.0, min(100.0, float(headline)))
+    kicker = "Quality score" if after_score is None else "Score before → after"
+    big = (
+        f'{score}<span style="font-size:0.38em;letter-spacing:-0.02em;color:rgba(243,241,236,0.45)">/100</span>'
+        if after_score is None
+        else (
+            f'{score}<span style="font-size:0.38em;letter-spacing:-0.02em;color:rgba(243,241,236,0.45)"> → </span>'
+            f'{after_score}<span style="font-size:0.38em;letter-spacing:-0.02em;color:rgba(243,241,236,0.45)">/100</span>'
+        )
+    )
+    copies_hint = (
+        "Same row, more than once"
+        if after_duplicates is None
+        else f"Was {duplicates:,} before cleaning"
+    )
     st.markdown(
         f"""
         <div class="era-bento">
           <div class="era-tile-xl">
             <div class="era-shell">
               <div class="era-core">
-                <div class="era-kicker">Your data quality score</div>
-                <div class="era-value-xl">{score}<span style="font-size:0.38em;letter-spacing:-0.02em;color:rgba(243,241,236,0.45)">/100</span></div>
+                <div class="era-kicker">{escape(kicker)}</div>
+                <div class="era-value-xl">{big}</div>
                 <p class="era-note" style="margin:0.85rem 0 0">{escape(caption)}</p>
                 <div class="era-track"><div class="era-fill" style="width:{width}%"></div></div>
               </div>
@@ -617,8 +685,8 @@ def quality_score_bento(
             <div class="era-shell">
               <div class="era-core">
                 <div class="era-kicker">Completeness</div>
-                <div class="era-value">{completeness:.0f}</div>
-                <p class="era-note" style="margin:0.65rem 0 0">Weight ~40%</p>
+                <div class="era-value">{_pair(completeness, after_completeness, as_int=True)}</div>
+                <p class="era-note" style="margin:0.65rem 0 0">How full the cells are · 40% of the score</p>
               </div>
             </div>
           </div>
@@ -626,8 +694,8 @@ def quality_score_bento(
             <div class="era-shell">
               <div class="era-core">
                 <div class="era-kicker">Uniqueness</div>
-                <div class="era-value">{uniqueness:.0f}</div>
-                <p class="era-note" style="margin:0.65rem 0 0">Weight ~30%</p>
+                <div class="era-value">{_pair(uniqueness, after_uniqueness, as_int=True)}</div>
+                <p class="era-note" style="margin:0.65rem 0 0">How many rows are unique · 30% of the score</p>
               </div>
             </div>
           </div>
@@ -635,17 +703,17 @@ def quality_score_bento(
             <div class="era-shell">
               <div class="era-core">
                 <div class="era-kicker">Consistency</div>
-                <div class="era-value">{consistency:.0f}</div>
-                <p class="era-note" style="margin:0.65rem 0 0">Weight ~30%</p>
+                <div class="era-value">{_pair(consistency, after_consistency, as_int=True)}</div>
+                <p class="era-note" style="margin:0.65rem 0 0">How consistent the formats are · 30% of the score</p>
               </div>
             </div>
           </div>
           <div class="era-tile-lg">
             <div class="era-shell">
               <div class="era-core">
-                <div class="era-kicker">Exact copies</div>
-                <div class="era-value">{duplicates:,}</div>
-                <p class="era-note" style="margin:0.65rem 0 0">Duplicate rows in the raw file</p>
+                <div class="era-kicker">Duplicate rows</div>
+                <div class="era-value">{_pair(duplicates, after_duplicates, as_int=True)}</div>
+                <p class="era-note" style="margin:0.65rem 0 0">{escape(copies_hint)}</p>
               </div>
             </div>
           </div>
@@ -667,6 +735,111 @@ def note_cards(notes: list[str]) -> None:
               <div class="era-core era-insight">
                 <div class="era-index">{i:02d}</div>
                 <p>{escape(sentence)}</p>
+              </div>
+            </div>
+            """
+        )
+    st.markdown("".join(blocks), unsafe_allow_html=True)
+
+
+def handoff_card(url: str) -> None:
+    st.markdown(
+        f"""
+        <div class="era-shell" style="margin:1.5rem 0 0.85rem">
+          <div class="era-core">
+            <div class="era-kicker">Next</div>
+            <p class="era-lede" style="margin:0 0 0.95rem">
+              Download the pack, then open cleaned_data.xlsx in Excel Report
+              Automator to write the briefing. Keep the PDF with it if someone
+              needs proof of what changed.
+            </p>
+            <a class="era-cta" href="{escape(url)}" target="_blank" rel="noopener">
+              Open Excel Report Automator
+              <span class="era-cta-icon">↗</span>
+            </a>
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def recipe_banner(line: str) -> None:
+    if not line or line == "No steps selected":
+        st.markdown(
+            """
+            <div class="era-shell">
+              <div class="era-core">
+                <div class="era-kicker">This plan</div>
+                <p class="era-lede" style="margin:0">Nothing is ticked. Open Advanced below if you still want extra tools.</p>
+              </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        return
+    st.markdown(
+        f"""
+        <div class="era-shell">
+          <div class="era-core">
+            <div class="era-kicker">This plan</div>
+            <p class="era-lede" style="margin:0.35rem 0 0">{escape(line)}</p>
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def finding_cards(findings) -> None:
+    if not findings:
+        st.markdown(
+            """
+            <div class="era-shell">
+              <div class="era-core">
+                <div class="era-kicker">Looks clean</div>
+                <p class="era-lede" style="margin:0">Nothing obvious stood out. Still glance at the score.</p>
+              </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        return
+    blocks = []
+    for i, finding in enumerate(findings, start=1):
+        delay = int(min(i * 70, 480))
+        sev = _css_token(finding.severity, _SEV_TOKENS, "low")
+        pillar = _css_token(finding.pillar, _PILLAR_TOKENS, "completeness")
+        samples = ""
+        if finding.samples:
+            shown = " · ".join(escape(str(s)) for s in finding.samples[:4])
+            samples = f'<p class="era-note" style="margin:0.65rem 0 0">Examples: {shown}</p>'
+        column = (
+            f'<span class="era-kicker" style="margin:0">{escape(finding.column)}</span>'
+            if finding.column
+            else ""
+        )
+        fix = (
+            f'<p class="era-note" style="margin:0.45rem 0 0">Suggested: {escape(finding.recommended_fix)}</p>'
+            if finding.recommended_fix
+            else ""
+        )
+        blocks.append(
+            f"""
+            <div class="era-shell era-insight-wrap" style="animation-delay:{delay}ms">
+              <div class="era-core era-insight">
+                <div class="era-index">{i:02d}</div>
+                <div>
+                  <div class="era-finding-meta">
+                    <span class="era-sev era-sev-{sev}">{escape(finding.severity)}</span>
+                    <span class="era-kicker" style="margin:0">{escape(finding.pillar)}</span>
+                    {column}
+                  </div>
+                  <p>{escape(finding.title)}</p>
+                  <p class="era-note" style="margin:0.35rem 0 0">{escape(finding.detail)}</p>
+                  {samples}
+                  {fix}
+                </div>
               </div>
             </div>
             """
