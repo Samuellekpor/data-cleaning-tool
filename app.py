@@ -6,6 +6,7 @@ import streamlit as st
 from cleaning import apply_cleaning, compose_rename_map, options_from_fix_keys
 from fuzzy import scan_fuzzy_duplicates
 from io_files import FileReadError, fingerprint_bytes, merge_frames, read_uploaded_file, unique_upload_name
+from license import license_gate
 from profiles import PROFILE_BY_ID
 from quality import build_quality_report
 from recipe import STEP_ORDER, build_recipe, recipe_line
@@ -29,6 +30,9 @@ st.set_page_config(
     # Open on desktop; collapse on narrow viewports so Protocol does not cover the hero.
     initial_sidebar_state="auto",
 )
+
+if not license_gate():
+    st.stop()
 
 inject_theme()
 
