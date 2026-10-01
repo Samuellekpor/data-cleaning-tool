@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from collections import defaultdict
 from dataclasses import dataclass, field
 from difflib import SequenceMatcher
@@ -10,6 +11,7 @@ import pandas as pd
 
 DEFAULT_THRESHOLD = 0.85
 MAX_UNIQUE = 5000
+MAX_BLOCK = 400
 
 
 @dataclass
@@ -18,12 +20,18 @@ class FuzzyGroup:
     variants: list[str]
     counts: dict[str, int]
     suggested: str
+    reasons: list[str] = field(default_factory=list)
+    similarity: float = 1.0
+    group_id: str = ""
 
 
 @dataclass
 class FuzzyScan:
     groups: list[FuzzyGroup] = field(default_factory=list)
     skipped_columns: list[str] = field(default_factory=list)
+    skipped_unique_counts: dict[str, int] = field(default_factory=dict)
+    sampled_columns: dict[str, int] = field(default_factory=dict)
+    truncated_blocks: dict[str, int] = field(default_factory=dict)
     scanned_columns: list[str] = field(default_factory=list)
 
 
@@ -55,7 +63,38 @@ def _similar(a: str, b: str, threshold: float) -> bool:
     return SequenceMatcher(None, a, b).ratio() >= threshold
 
 
-def _cluster(uniques: list[str], threshold: float) -> list[list[str]]:
+def explain_match(variants: list[str]) -> tuple[float, list[str]]:
+    """Why these values were grouped: casing, spacing, and/or similarity %."""
+    reasons: list[str] = []
+    if any(v != v.strip() or "  " in v for v in variants):
+        reasons.append("spacing")
+    stripped = [v.strip() for v in variants]
+    folded = {s.casefold() for s in stripped}
+    if len(set(stripped)) > len(folded):
+        reasons.append("casing")
+    norms = [_normalize(v) for v in variants]
+    distinct = list(dict.fromkeys(norms))
+    if len(distinct) <= 1:
+        similarity = 1.0
+        if not reasons:
+            reasons.append("identical after trim")
+        return similarity, reasons
+    ratios = [
+        SequenceMatcher(None, a, b).ratio()
+        for i, a in enumerate(distinct)
+        for b in distinct[i + 1 :]
+    ]
+    similarity = min(ratios) if ratios else 1.0
+    reasons.append(f"{int(round(similarity * 100))}% similar")
+    return similarity, reasons
+
+
+def _group_id(column: str, variants: list[str]) -> str:
+    blob = column + "\0" + "\0".join(sorted(variants))
+    return hashlib.sha1(blob.encode("utf-8")).hexdigest()[:12]
+
+
+def _cluster(uniques: list[str], threshold: float) -> tuple[list[list[str]], int]:
     """Union-find on normalized similarity; keep original spellings in each cluster."""
     by_norm: dict[str, list[str]] = defaultdict(list)
     for val in uniques:
@@ -80,7 +119,11 @@ def _cluster(uniques: list[str], threshold: float) -> list[list[str]]:
         key = n[:2] if n else ""
         blocks[key].append(n)
 
+    truncated = 0
     for members in blocks.values():
+        if len(members) > MAX_BLOCK:
+            truncated += len(members) - MAX_BLOCK
+            members = members[:MAX_BLOCK]
         for i, a in enumerate(members):
             for b in members[i + 1 :]:
                 if _similar(a, b, threshold):
@@ -89,15 +132,17 @@ def _cluster(uniques: list[str], threshold: float) -> list[list[str]]:
     clusters: dict[str, list[str]] = defaultdict(list)
     for n in norms:
         clusters[find(n)].extend(by_norm[n])
-    return [vals for vals in clusters.values() if len(vals) > 1]
+    return [vals for vals in clusters.values() if len(vals) > 1], truncated
 
 
 def scan_fuzzy_duplicates(
     df: pd.DataFrame,
     threshold: float = DEFAULT_THRESHOLD,
     max_unique: int = MAX_UNIQUE,
+    force_columns: set[str] | None = None,
 ) -> FuzzyScan:
     scan = FuzzyScan()
+    force_columns = force_columns or set()
     for col in df.columns:
         series = df[col]
         if not _is_text_column(series):
@@ -105,12 +150,20 @@ def scan_fuzzy_duplicates(
         values = series.dropna().astype(str)
         values = values[values.str.strip().ne("")]
         uniques = values.unique().tolist()
-        if len(uniques) > max_unique:
-            scan.skipped_columns.append(str(col))
+        col_name = str(col)
+        if len(uniques) > max_unique and col_name not in force_columns:
+            scan.skipped_columns.append(col_name)
+            scan.skipped_unique_counts[col_name] = len(uniques)
             continue
-        scan.scanned_columns.append(str(col))
         counts = values.value_counts().to_dict()
-        for variants in _cluster(uniques, threshold):
+        if len(uniques) > max_unique and col_name in force_columns:
+            uniques = list(values.value_counts().head(max_unique).index)
+            scan.sampled_columns[col_name] = len(counts)
+        scan.scanned_columns.append(col_name)
+        clusters, leftover = _cluster(uniques, threshold)
+        if leftover:
+            scan.truncated_blocks[col_name] = leftover
+        for variants in clusters:
             def _rank(v: str) -> tuple:
                 stripped = v.strip()
                 return (
@@ -121,12 +174,16 @@ def scan_fuzzy_duplicates(
                 )
 
             suggested = max(variants, key=_rank)
+            similarity, reasons = explain_match(variants)
             scan.groups.append(
                 FuzzyGroup(
-                    column=str(col),
+                    column=col_name,
                     variants=sorted(variants, key=lambda v: (-counts.get(v, 0), v)),
                     counts={v: int(counts.get(v, 0)) for v in variants},
                     suggested=suggested,
+                    reasons=reasons,
+                    similarity=similarity,
+                    group_id=_group_id(col_name, variants),
                 )
             )
     return scan

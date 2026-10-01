@@ -8,7 +8,7 @@ from typing import Any
 
 import pandas as pd
 
-from fuzzy import scan_fuzzy_duplicates
+from fuzzy import FuzzyGroup, scan_fuzzy_duplicates
 from quality import detect_date_formats, infer_role
 
 CURRENCY_RE = re.compile(r"[\$€£¥₹,\s]")
@@ -35,7 +35,7 @@ class CleaningOptions:
     drop_empty_rows: bool = False
     drop_empty_columns: bool = False
     collapse_fuzzy: bool = False
-    fuzzy_groups: list[FuzzyGroup] = field(default_factory=list)
+    fuzzy_groups: list[FuzzyGroup] | None = None
 
 
 @dataclass
@@ -60,18 +60,18 @@ class ChangeLog:
             {"item": "Rows after", "value": self.rows_after},
             {"item": "Columns before", "value": self.cols_before},
             {"item": "Columns after", "value": self.cols_after},
-            {"item": "Exact duplicates dropped", "value": self.duplicates_dropped},
+            {"item": "Duplicate rows removed", "value": self.duplicates_dropped},
             {"item": "Empty rows removed", "value": self.empty_rows_removed},
             {"item": "Empty columns removed", "value": self.empty_cols_removed},
-            {"item": "Missing values filled", "value": self.missing_filled},
-            {"item": "Fuzzy values collapsed", "value": self.fuzzy_collapsed},
+            {"item": "Empty cells filled", "value": self.missing_filled},
+            {"item": "Similar spellings merged", "value": self.fuzzy_collapsed},
             {
                 "item": "Columns renamed",
                 "value": ", ".join(f"{a} → {b}" for a, b in self.columns_renamed.items())
                 or "—",
             },
             {
-                "item": "Date columns parsed",
+                "item": "Date columns fixed",
                 "value": ", ".join(self.dates_parsed) or "—",
             },
             {
@@ -89,6 +89,20 @@ class ChangeLog:
         for step in self.steps:
             lines.append(f"- {step}")
         return "\n".join(lines) + "\n"
+
+
+def compose_rename_map(prior: dict[str, str], latest: dict[str, str]) -> dict[str, str]:
+    """Chain original → current with current → next into original → final."""
+    prior = {str(a): str(b) for a, b in (prior or {}).items() if a != b}
+    latest = {str(a): str(b) for a, b in (latest or {}).items() if a != b}
+    composed: dict[str, str] = {}
+    prior_current = set(prior.values())
+    for orig, cur in prior.items():
+        composed[orig] = latest.get(cur, cur)
+    for cur, new in latest.items():
+        if cur not in prior and cur not in prior_current:
+            composed[cur] = new
+    return {a: b for a, b in composed.items() if a != b}
 
 
 def _text_columns(df: pd.DataFrame) -> list[str]:
@@ -115,6 +129,37 @@ def preview_duplicate_rows(df: pd.DataFrame, subset: list[str] | None) -> pd.Dat
     return df[df.duplicated(subset=cols, keep="first")].copy()
 
 
+def options_from_fix_keys(
+    keys: list[str],
+    *,
+    dayfirst: bool = False,
+    fuzzy_groups: list | None = None,
+) -> CleaningOptions:
+    """Turn finding fix keys into a single CleaningOptions payload."""
+    opts = CleaningOptions()
+    for key in keys:
+        if key == "drop_exact_duplicates":
+            opts.drop_exact_duplicates = True
+        elif key == "collapse_fuzzy":
+            opts.collapse_fuzzy = True
+        elif key == "fix_dates":
+            opts.fix_dates = True
+        elif key == "fix_emails":
+            opts.fix_emails = True
+        elif key == "normalize_phones":
+            opts.normalize_phones = True
+        elif key == "drop_empty_columns":
+            opts.drop_empty_columns = True
+        elif key == "trim_whitespace":
+            opts.trim_whitespace = True
+        elif key == "strip_currency":
+            opts.strip_currency = True
+    opts.dayfirst = dayfirst
+    if fuzzy_groups is not None:
+        opts.fuzzy_groups = list(fuzzy_groups)
+    return opts
+
+
 def apply_cleaning(
     df: pd.DataFrame, options: CleaningOptions
 ) -> tuple[pd.DataFrame, ChangeLog]:
@@ -126,23 +171,31 @@ def apply_cleaning(
             out[col] = out[col].map(
                 lambda v: v.strip() if isinstance(v, str) else v
             )
-        log.steps.append("Trimmed leading/trailing whitespace on text columns.")
+        log.steps.append("Trimmed extra spaces on text columns.")
         log.standardized.append("whitespace")
 
     if options.collapse_fuzzy:
-        groups = scan_fuzzy_duplicates(out).groups
+        groups = (
+            options.fuzzy_groups
+            if options.fuzzy_groups is not None
+            else scan_fuzzy_duplicates(out).groups
+        )
         collapsed = 0
+        merged_groups = 0
         for group in groups:
             mapping = {v: group.suggested for v in group.variants if v != group.suggested}
             if mapping:
                 matched = out[group.column].isin(mapping.keys())
                 collapsed += int(matched.sum())
+                merged_groups += 1
                 out[group.column] = out[group.column].replace(mapping)
         log.fuzzy_collapsed = collapsed
         if collapsed:
             log.steps.append(
-                f"Collapsed {collapsed} near-duplicate text value(s) to suggested spellings."
+                f"Merged {collapsed} similar-spelling value(s) across {merged_groups} group(s)."
             )
+        elif not groups:
+            log.steps.append("Similar-spelling merge skipped — no groups were selected.")
 
     if options.casing != "none":
         fn = {"title": str.title, "lower": str.lower, "upper": str.upper}[options.casing]
@@ -170,7 +223,7 @@ def apply_cleaning(
                 lambda v: _clean_phone(v, options.phone_format)
             )
             log.standardized.append(f"phone:{col}")
-        log.steps.append("Normalized phone numbers (non-digits stripped).")
+        log.steps.append("Standardized phone numbers (punctuation removed).")
 
     if options.strip_currency:
         for col in out.columns:
@@ -179,7 +232,7 @@ def apply_cleaning(
                 out[col] = converted
                 log.standardized.append(f"currency:{col}")
         if any(s.startswith("currency:") for s in log.standardized):
-            log.steps.append("Stripped currency symbols and thousands separators from numeric-looking columns.")
+            log.steps.append("Turned currency text into numbers (symbols and commas removed).")
 
     if options.fix_dates:
         for col in out.columns:
@@ -195,7 +248,7 @@ def apply_cleaning(
                 log.dates_parsed.append(str(col))
         if log.dates_parsed:
             log.steps.append(
-                "Parsed date-like columns"
+                "Fixed date-like columns"
                 + (" (day-first)." if options.dayfirst else ".")
             )
 
@@ -218,7 +271,7 @@ def apply_cleaning(
         before_n = len(out)
         out = out.dropna(how="any")
         dropped = before_n - len(out)
-        log.steps.append(f"Dropped {dropped} row(s) that still had missing values.")
+        log.steps.append(f"Removed {dropped} row(s) that still had empty cells.")
     elif options.missing_strategy == "drop_columns":
         drop = [
             c
@@ -229,8 +282,8 @@ def apply_cleaning(
         if drop:
             out = out.drop(columns=drop)
             log.steps.append(
-                "Dropped columns over missing threshold "
-                f"({options.missing_threshold_pct:.0f}%): " + ", ".join(map(str, drop))
+                "Removed columns that were mostly empty "
+                f"({options.missing_threshold_pct:.0f}%+ empty): " + ", ".join(map(str, drop))
             )
     elif options.missing_strategy == "fill":
         filled = 0
@@ -247,7 +300,7 @@ def apply_cleaning(
                 out[col] = out[col].fillna(options.fill_value)
         log.missing_filled = filled
         if filled:
-            log.steps.append(f"Filled {filled} missing value(s).")
+            log.steps.append(f"Filled {filled} empty cell(s).")
 
     if options.drop_exact_duplicates:
         before_n = len(out)
@@ -257,8 +310,8 @@ def apply_cleaning(
         out = out.drop_duplicates(subset=subset, keep="first")
         log.duplicates_dropped = before_n - len(out)
         log.steps.append(
-            f"Dropped {log.duplicates_dropped} exact duplicate row(s)"
-            + (f" (key columns: {', '.join(subset)})." if subset else ".")
+            f"Removed {log.duplicates_dropped} duplicate row(s)"
+            + (f" (matched on: {', '.join(subset)})." if subset else ".")
         )
 
     rename_map: dict[str, str] = {}
